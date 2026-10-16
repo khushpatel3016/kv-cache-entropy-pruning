@@ -1,0 +1,14 @@
+# Quick end-to-end check on a 6 GB laptop GPU (about 15-25 minutes).
+# Expect: full >= snapkv >= random_tokens on every task.
+name: smoke_laptop
+model: Qwen/Qwen2.5-1.5B-Instruct
+dtype: auto            # float16 on GPU
+window: 32
+kernel: 7
+max_len: 4096
+methods: [full, snapkv, pyramidkv, entropy, random_tokens]
+budgets: [0.2]
+longbench:
+  tasks: [qasper, hotpotqa, passage_retrieval_en]
+  limit: 20
+output: results/smoke_laptop.jsonl
