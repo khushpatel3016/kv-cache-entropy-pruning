@@ -1,0 +1,16 @@
+# Main experiment (RQ1, RQ2, RQ3). Kaggle/Colab T4 16 GB.
+# Run the 20% budget first:  python -m kvprune.run --config configs/main_qwen3b.yaml --budgets 0.2
+# then 0.1, 0.3, 0.5. Results append to the same file and resume automatically.
+name: main_qwen3b
+model: Qwen/Qwen2.5-3B-Instruct
+dtype: auto
+window: 32
+kernel: 7
+max_len: 8192
+static_profile: profiles/qwen2.5-3b-instruct.json
+methods: [full, streaming, snapkv, pyramidkv, random_alloc, entropy_static, entropy, cake_style]
+budgets: [0.1, 0.2, 0.3, 0.5]
+longbench:
+  tasks: [qasper, hotpotqa, gov_report, trec, passage_retrieval_en, lcc]
+  limit: 100
+output: results/main_qwen3b.jsonl

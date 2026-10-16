@@ -1,0 +1,16 @@
+# Versions this code was tested with (CPU tests, Oct 2026). Install torch for
+# your CUDA first (https://pytorch.org/get-started/locally/), then: pip install -r requirements.txt
+torch>=2.4
+transformers==5.20.1
+accelerate>=1.0
+huggingface_hub>=0.30
+datasets==3.6.0        # only used as a fallback LongBench loader
+numpy>=1.26
+pandas>=2.2
+matplotlib>=3.8
+pyyaml>=6.0
+rapidfuzz>=3.0
+tabulate>=0.9
+pytest>=8.0
+# optional, only for --load-in-4bit:
+# bitsandbytes>=0.43

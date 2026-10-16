@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kvprune"
+version = "1.0.0"
+description = "Cross-layer KV-cache pruning with entropy-driven per-layer budgets"
+requires-python = ">=3.10"
+authors = [{ name = "Khush Patel" }, { name = "Sneha Dash" }]
+license = { text = "MIT" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

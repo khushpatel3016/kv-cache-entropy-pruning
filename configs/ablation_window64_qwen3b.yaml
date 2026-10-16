@@ -1,0 +1,11 @@
+# Observation-window ablation (w = 64); compare with window 32 from ablation_qwen3b.
+name: ablation_window64_qwen3b
+model: Qwen/Qwen2.5-3B-Instruct
+dtype: auto
+window: 64
+methods: [snapkv, entropy]
+budgets: [0.2]
+longbench:
+  tasks: [qasper, hotpotqa, gov_report, trec, passage_retrieval_en, lcc]
+  limit: 50
+output: results/ablation_window64_qwen3b.jsonl

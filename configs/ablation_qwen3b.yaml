@@ -1,0 +1,20 @@
+# Ablations at 20% budget: temperature tau, floor, and the random-allocation control.
+name: ablation_qwen3b
+model: Qwen/Qwen2.5-3B-Instruct
+dtype: auto
+window: 32
+methods:
+  - "snapkv"                    # tau = 0 equivalent
+  - "entropy:tau=0.5"
+  - "entropy"                   # tau = 1
+  - "entropy:tau=2"
+  - "entropy:floor=16"
+  - "entropy:floor=64"
+  - "random_alloc"
+  - "random_alloc:seed=1"
+  - "random_alloc:seed=2"
+budgets: [0.2]
+longbench:
+  tasks: [qasper, hotpotqa, gov_report, trec, passage_retrieval_en, lcc]
+  limit: 50
+output: results/ablation_qwen3b.jsonl
