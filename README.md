@@ -42,7 +42,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 pip install -e .
 
-python -m pytest -q                                  # 57 tests, ~10 s
+python -m pytest -q                                  # 59 tests, ~15 s
 python scripts/demo.py                               # live demo, Qwen2.5-0.5B, 2K tokens, CPU
 python -m kvprune.run --config configs/smoke_cpu.yaml
 ```
@@ -51,7 +51,7 @@ The smoke run should show `full ≥ snapkv ≥ random_tokens` on average. If not
 
 ## Reproducing every result
 
-Main runs need a 16 GB GPU (free Kaggle or Colab T4). `notebooks/kaggle_run.ipynb` runs everything below across Kaggle's two T4s and resumes after session timeouts.
+Main runs need a 16 GB GPU (free Kaggle or Colab T4). `notebooks/kaggle_run.ipynb` runs everything below across Kaggle's two T4s via `scripts/kaggle_stage.py`, which balances work across the GPUs, stops cleanly before Kaggle's 12-hour limit (`--max-hours`), and resumes without repeating finished rows.
 
 | Step | Command | Produces |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ src/kvprune/
   data/            LongBench loader, passkey generator
 scripts/           calibrate_profile, profile_memory, make_figures, demo
 configs/           one YAML per experiment
-tests/             57 tests (see below)
+tests/             59 tests (see below)
 notebooks/         Kaggle notebook
 ```
 

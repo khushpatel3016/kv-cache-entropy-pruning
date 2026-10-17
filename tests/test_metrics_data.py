@@ -91,3 +91,46 @@ def test_runner_end_to_end(tmp_path):
         assert sum(r["layer_budgets"]) == (r["n_tokens"] * 4 if r["method"] == "full" else int(r["budget"] * r["n_tokens"] * 4))
     run(conf)  # resume: nothing new
     assert len(out.read_text().splitlines()) == len(rows)
+
+
+def _tiny_run_conf(tmp_path, out_name):
+    m, cfg = make_tiny("qwen2", layers=4)
+    tok = make_tokenizer()
+    mdir = tmp_path / "tiny"
+    if not mdir.exists():
+        m.save_pretrained(mdir)
+        tok.save_pretrained(mdir)
+    return {
+        "name": "t2", "model": str(mdir), "device": "cpu", "window": 16,
+        "methods": ["full", "snapkv", "entropy"], "budgets": [0.2],
+        "passkey": {"lengths": [300], "depths": [0.0, 1.0], "trials": 1},
+        "output": str(tmp_path / out_name),
+    }
+
+
+def test_runner_time_limit_stops_cleanly(tmp_path):
+    from kvprune.run import run
+
+    conf = _tiny_run_conf(tmp_path, "a.jsonl")
+    conf["max_hours"] = 0.0
+    run(conf)
+    assert not (tmp_path / "a.jsonl").exists() or (tmp_path / "a.jsonl").read_text() == ""
+    del conf["max_hours"]
+    run(conf)
+    assert len((tmp_path / "a.jsonl").read_text().splitlines()) == 2 * 3
+
+
+def test_runner_resume_across_files(tmp_path):
+    """Rows finished in one output file are not repeated when the same experiment writes to another file."""
+    from kvprune.run import run
+
+    conf = _tiny_run_conf(tmp_path, "gpu0.jsonl")
+    run(conf)
+    n0 = len((tmp_path / "gpu0.jsonl").read_text().splitlines())
+    conf["output"] = str(tmp_path / "gpu1.jsonl")
+    conf["budgets"] = [0.2, 0.5]  # only the 0.5 jobs are new; 'full' must not repeat
+    run(conf)
+    rows = [json.loads(l) for l in (tmp_path / "gpu1.jsonl").read_text().splitlines()]
+    assert n0 == 2 * 3
+    assert len(rows) == 2 * 2
+    assert all(r["budget"] == 0.5 for r in rows)

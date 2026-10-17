@@ -10,6 +10,7 @@ dies (Kaggle timeout, OOM) resumes where it stopped when relaunched.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import platform
@@ -30,13 +31,28 @@ def _key(d: dict) -> tuple:
     return (d.get("task"), d.get("idx"), d.get("method"), d.get("budget"), d.get("length"), d.get("depth"))
 
 
-def _done_keys(path: str) -> set:
+def _done_keys(path: str, experiment: str | None = None, model: str | None = None) -> set:
+    """Keys of rows already finished: this output file, plus any other JSONL file in
+    the same folder holding rows of the same experiment and model (so re-splitting
+    tasks across GPUs never repeats work)."""
     keys = set()
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
+    folder = os.path.dirname(path) or "."
+    paths = {os.path.abspath(path)}
+    if experiment:
+        paths |= {os.path.abspath(p) for p in glob.glob(os.path.join(folder, "*.jsonl"))}
+    for p in sorted(paths):
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8") as f:
             for line in f:
-                if line.strip():
-                    keys.add(_key(json.loads(line)))
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # a line cut off by a killed process
+                if p == os.path.abspath(path) or (row.get("experiment") == experiment and row.get("model") == model):
+                    keys.add(_key(row))
     return keys
 
 
@@ -74,7 +90,7 @@ def _samples(cfg: dict, tok) -> Iterator[dict]:
 def run(cfg: dict) -> str:
     out_path = cfg["output"]
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    done = _done_keys(out_path)
+    done = _done_keys(out_path, cfg.get("name"), cfg.get("model"))
     methods = [get_method(m) for m in cfg["methods"]]
     budgets = cfg.get("budgets", [0.2])
     jobs = list(_jobs(cfg, methods, budgets))
@@ -95,6 +111,7 @@ def run(cfg: dict) -> str:
     max_len = int(cfg.get("max_len", 8192))
     n_written = 0
     t_start = time.time()
+    max_hours = cfg.get("max_hours")
 
     with open(out_path, "a", encoding="utf-8") as fout:
         for s in _samples(cfg, tok):
@@ -102,6 +119,10 @@ def run(cfg: dict) -> str:
             todo = [(m, b) for (m, b) in jobs if _key({**base, "method": m.label, "budget": b}) not in done]
             if not todo:
                 continue
+            if max_hours is not None and (time.time() - t_start) / 3600 >= float(max_hours):
+                print(f"time limit of {float(max_hours):.2f} h reached; stopping cleanly. "
+                      f"Rerun the same command to continue from here.", flush=True)
+                break
             key = None
             if s["kind"] == "longbench":
                 ids = build_longbench_prompt(s["sample"], tok, max_len)
@@ -156,6 +177,7 @@ def main(argv=None):
     ap.add_argument("--output", help="override output path")
     ap.add_argument("--budgets", nargs="+", type=float, help="override budgets, e.g. --budgets 0.2")
     ap.add_argument("--methods", nargs="+", help="override methods")
+    ap.add_argument("--max-hours", type=float, help="stop cleanly (before the next sample) after this many hours")
     a = ap.parse_args(argv)
     with open(a.config) as f:
         cfg = yaml.safe_load(f)
@@ -163,6 +185,8 @@ def main(argv=None):
         cfg["budgets"] = a.budgets
     if a.methods:
         cfg["methods"] = a.methods
+    if a.max_hours is not None:
+        cfg["max_hours"] = a.max_hours
     if a.limit is not None and cfg.get("longbench"):
         cfg["longbench"]["limit"] = a.limit
     if a.tasks and cfg.get("longbench"):
