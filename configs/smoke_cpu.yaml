@@ -1,0 +1,17 @@
+# Quick end-to-end check on a laptop CPU (no NVIDIA GPU needed), about 10-20 minutes.
+# Uses the smallest model and short contexts so it fits in 8 GB of RAM.
+# Expect: full >= snapkv >= random_tokens on average. Scores are low in absolute
+# terms (0.5B model, 2K context); this run only checks the pipeline works.
+name: smoke_cpu
+model: Qwen/Qwen2.5-0.5B-Instruct
+device: cpu
+dtype: float32
+window: 32
+kernel: 7
+max_len: 2048
+methods: [full, snapkv, pyramidkv, entropy, random_tokens]
+budgets: [0.2]
+longbench:
+  tasks: [qasper, hotpotqa, passage_retrieval_en]
+  limit: 10
+output: results/smoke_cpu.jsonl

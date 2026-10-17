@@ -1,6 +1,6 @@
-# Quick end-to-end check on a 6 GB laptop GPU (about 15-25 minutes).
+# Quick end-to-end check on a GPU (Kaggle/Colab T4, about 10 minutes).
 # Expect: full >= snapkv >= random_tokens on every task.
-name: smoke_laptop
+name: smoke_gpu
 model: Qwen/Qwen2.5-1.5B-Instruct
 dtype: auto            # float16 on GPU
 window: 32
@@ -11,4 +11,4 @@ budgets: [0.2]
 longbench:
   tasks: [qasper, hotpotqa, passage_retrieval_en]
   limit: 20
-output: results/smoke_laptop.jsonl
+output: results/smoke_gpu.jsonl

@@ -29,22 +29,25 @@ b_l = floor + (B - L·floor) · H_l^τ / Σ_k H_k^τ               (exact intege
 
 `τ = 0` reduces to uniform SnapKV; `τ > 1` sharpens the allocation. Inside each layer, tokens are kept by SnapKV's window score (attention mass from the window, average-pooled with kernel 7), and the window itself is always kept. Pruning happens once, after prefill; decoding then runs with each layer holding its own number of tokens.
 
-## Quick start (laptop, 6 GB GPU)
+## Quick start (any laptop, CPU only)
+
+No NVIDIA GPU is needed for development, tests or the demo. Integrated graphics (e.g. Intel Iris Xe) are not used; everything runs on the CPU.
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/kv-cache-entropy-pruning.git
+git clone https://github.com/khushpatel3016/kv-cache-entropy-pruning.git
 cd kv-cache-entropy-pruning
-conda create -n kvp python=3.11 -y && conda activate kvp
-pip install torch --index-url https://download.pytorch.org/whl/cu121   # match your CUDA
+python -m venv .venv                                 # Python 3.10-3.13
+.venv\Scripts\activate                               # Windows  (Linux/Mac: source .venv/bin/activate)
+pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 pip install -e .
 
-python -m pytest -q                                  # 57 tests, CPU, ~10 s
-python scripts/demo.py                               # live demo, Qwen2.5-1.5B
-python -m kvprune.run --config configs/smoke_laptop.yaml
+python -m pytest -q                                  # 57 tests, ~10 s
+python scripts/demo.py                               # live demo, Qwen2.5-0.5B, 2K tokens, CPU
+python -m kvprune.run --config configs/smoke_cpu.yaml
 ```
 
-The smoke run should show `full ≥ snapkv ≥ random_tokens` on every task. If not, stop and check the setup before running anything bigger.
+The smoke run should show `full ≥ snapkv ≥ random_tokens` on average. If not, stop and check the setup before running anything bigger. All reported experiments run on a GPU (Kaggle or Colab T4, see below); `configs/smoke_gpu.yaml` is the same check on a GPU.
 
 ## Reproducing every result
 
