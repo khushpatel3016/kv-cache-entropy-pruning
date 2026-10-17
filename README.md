@@ -42,7 +42,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 pip install -e .
 
-python -m pytest -q                                  # 61 tests, ~30 s
+python -m pytest -q                                  # 62 tests, ~30 s
 python scripts/demo.py                               # live demo, Qwen2.5-0.5B, 2K tokens, CPU
 python -m kvprune.run --config configs/smoke_cpu.yaml
 ```
@@ -87,7 +87,7 @@ src/kvprune/
   data/            LongBench loader, passkey generator
 scripts/           calibrate_profile, profile_memory, make_figures, demo
 configs/           one YAML per experiment
-tests/             61 tests (see below)
+tests/             62 tests (see below)
 notebooks/         Kaggle notebook
 ```
 

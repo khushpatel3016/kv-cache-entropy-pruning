@@ -50,6 +50,10 @@ STYLE = {  # method -> (gray, marker, linestyle, linewidth, display name)
     "random_tokens": ("0.8", ".", ":", 1.2, "Random tokens"),
 }
 ORDER = list(STYLE)
+TASK_LABEL = {"qasper": "Qasper", "hotpotqa": "HotpotQA", "gov_report": "GovReport", "trec": "TREC",
+              "passage_retrieval_en": "PassageRet.", "lcc": "LCC", "narrativeqa": "NarrativeQA",
+              "multifieldqa_en": "MultiFieldQA", "2wikimqa": "2WikiMQA", "multi_news": "MultiNews",
+              "samsum": "SAMSum", "passage_count": "PassageCount", "repobench-p": "RepoBench-P"}
 
 
 def setup():
@@ -124,7 +128,7 @@ def fig2(df, out):
     styles = [("0.0", "-"), ("0.35", "--"), ("0.55", "-."), ("0.7", ":")]
     for (g, ls), (_, r) in zip(styles, picks.iterrows()):
         e = r["entropies"]
-        ax.plot(range(len(e)), e, color=g, ls=ls, lw=1.4, label=f"{r['task']} #{r['idx']}")
+        ax.plot(range(len(e)), e, color=g, ls=ls, lw=1.4, label=f"{TASK_LABEL.get(r['task'], r['task'])} #{r['idx']}")
     ax.set_xlabel("Layer")
     ax.set_ylabel("Normalised attention entropy")
     ax.set_title("Per-layer entropy differs across inputs")
@@ -161,7 +165,7 @@ def fig3(df, out, budget=0.2):
                hatch=["", "///"][k], yerr=[los, his], capsize=2, error_kw={"lw": 0.8},
                label=f"vs {name_of(c)}")
     ax.axhline(0, color="0", lw=0.8)
-    ax.set_xticks(range(len(tasks)), tasks, rotation=30, ha="right")
+    ax.set_xticks(range(len(tasks)), [TASK_LABEL.get(t, t) for t in tasks], rotation=30, ha="right")
     ax.set_ylabel("Score gain (points)")
     ax.set_title(f"EntropyKV gain at {int(budget * 100)}% budget (95% CI)")
     ax.legend(frameon=False)
@@ -262,6 +266,7 @@ def tables(df, out, budget=0.2):
         return print("  skip tables: no LongBench rows")
     d = d[(d["budget"] == budget) | (d["method"] == "full")]
     t = d.groupby(["method", "task"])["score"].mean().unstack("task") * 100
+    t.columns = [TASK_LABEL.get(c, c) for c in t.columns]
     t["Average"] = t.mean(axis=1)
     t = t.reindex([m for m in ORDER if m in t.index] + [m for m in t.index if m not in ORDER])
     t.index = [name_of(m) for m in t.index]
@@ -296,6 +301,7 @@ def main(argv=None):
     ap.add_argument("--profile", default="results/profile_*.jsonl")
     ap.add_argument("--out", default="figures")
     ap.add_argument("--budget", type=float, default=0.2, help="budget for fig3 and the main table")
+    ap.add_argument("--main-experiment", default="main_qwen3b", help="experiment used for Fig 1-3 and the tables")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     setup()
@@ -309,13 +315,20 @@ def main(argv=None):
             print(f"dropped {before - len(df)} duplicate rows")
     prof = load(a.profile) if glob.glob(a.profile) else None
     print(f"{len(df)} result rows, {0 if prof is None else len(prof)} profile rows")
-    fig1(df, a.out)
-    fig2(df, a.out)
-    fig3(df, a.out, a.budget)
+    # Main figures and tables use only the main experiment of the chosen model, so smoke
+    # tests (other models, short contexts) and ablations never mix into them.
+    main = df
+    if len(df) and "experiment" in df:
+        main = df[df["experiment"].astype(str) == a.main_experiment]
+        if main.empty:
+            print(f"no rows for experiment {a.main_experiment!r}; main figures skipped")
+    fig1(main, a.out)
+    fig2(main, a.out)
+    fig3(main, a.out, a.budget)
     fig4(df, a.out)
     fig5(df, a.out)
     fig6(prof, a.out)
-    tables(df, a.out, a.budget)
+    tables(main, a.out, a.budget)
 
 
 if __name__ == "__main__":

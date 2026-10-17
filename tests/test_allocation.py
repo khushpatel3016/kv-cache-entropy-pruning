@@ -70,3 +70,9 @@ def test_total_budget():
     assert total_budget(1000, 10, per_layer=128) == 1280
     with pytest.raises(ValueError):
         total_budget(1000, 10)
+
+
+def test_negative_tau_reverses_direction():
+    w = entropy_weights([0.2, 0.4, 0.8], tau=-1.0)
+    b = allocate_proportional(w, 700, 1000, floor=0)
+    assert sum(b) == 700 and b[0] > b[1] > b[2]

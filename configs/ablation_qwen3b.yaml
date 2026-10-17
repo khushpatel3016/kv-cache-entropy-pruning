@@ -1,4 +1,5 @@
-# Ablations at 20% budget: temperature tau, floor, and the random-allocation control.
+# Ablations at 20% budget: temperature tau (incl. the reversed direction tau=-1), floor,
+# and the random-allocation control.
 name: ablation_qwen3b
 model: Qwen/Qwen2.5-3B-Instruct
 dtype: auto
@@ -8,6 +9,7 @@ methods:
   - "entropy:tau=0.5"
   - "entropy"                   # tau = 1
   - "entropy:tau=2"
+  - "entropy:tau=-1"            # diagnostic: favour LOW-entropy layers (is the direction right?)
   - "entropy:floor=16"
   - "entropy:floor=64"
   - "random_alloc"
