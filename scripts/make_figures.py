@@ -301,6 +301,12 @@ def main(argv=None):
     setup()
     files = [f for f in glob.glob(a.results) if "profile_" not in os.path.basename(f)]
     df = pd.concat([load(f) for f in files], ignore_index=True) if files else pd.DataFrame()
+    if len(df):
+        keys = [c for c in ("experiment", "model", "task", "idx", "method", "budget", "length", "depth") if c in df]
+        before = len(df)
+        df = df.drop_duplicates(subset=keys, keep="first").reset_index(drop=True)
+        if len(df) < before:
+            print(f"dropped {before - len(df)} duplicate rows")
     prof = load(a.profile) if glob.glob(a.profile) else None
     print(f"{len(df)} result rows, {0 if prof is None else len(prof)} profile rows")
     fig1(df, a.out)
