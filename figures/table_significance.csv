@@ -1,0 +1,7 @@
+budget,baseline,n_pairs,diff_x100,ci_low,ci_high,p_boot,significant
+0.2,EntropyKV-static,600,-0.029,-0.418,0.438,0.83,False
+0.2,CAKE-style,600,0.078,-0.981,1.133,0.902,False
+0.2,PyramidKV,600,2.047,0.692,3.406,0.002,True
+0.2,SnapKV,600,-0.445,-0.912,-0.021,0.042,True
+0.2,StreamingLLM,600,10.331,8.041,12.733,0.0,True
+0.2,Random allocation,600,5.07,3.331,6.891,0.0,True
