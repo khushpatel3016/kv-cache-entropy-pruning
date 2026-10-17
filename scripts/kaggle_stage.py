@@ -6,9 +6,7 @@ Every job stops cleanly before the deadline (between samples, never mid-row),
 so the notebook always reaches its final cell and saves its output. Rerunning
 the same stage later continues exactly where it stopped.
 
-Work is split so both GPUs finish at about the same time: gov_report
-(512-token summaries) costs about as much as the other five tasks together, so it
-gets a GPU of its own.
+Work is split so both GPUs finish at about the same time (see SPLITS).
 """
 
 from __future__ import annotations
@@ -21,7 +19,15 @@ import time
 
 PY = sys.executable
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SPLIT = {0: ["gov_report"], 1: ["qasper", "hotpotqa", "trec", "passage_retrieval_en", "lcc"]}
+SHORT = ["qasper", "hotpotqa", "trec", "passage_retrieval_en", "lcc"]
+# Balanced from timings measured on Kaggle T4s (Qwen2.5-3B, 8K context): gov_report writes
+# 512-token summaries (~3.2 min/sample for 8 decodes) while the five other tasks together take
+# ~2 h per 8-decode pass. Splitting gov_report by sample range makes both GPUs finish together.
+SPLITS = {
+    "one_budget": {0: ["gov_report[0:75]"], 1: ["gov_report[75:100]", *SHORT]},      # ~4 h each
+    "three_budgets": {0: ["gov_report[0:67]"], 1: ["gov_report[67:100]", *SHORT]},   # ~9.5 h each
+    "llama": {0: ["gov_report[0:35]"], 1: ["gov_report[35:50]", *SHORT]},             # ~1.5 h each
+}
 
 STAGES = {
     "main_20": "calibration + main experiment at 20% budget",
@@ -77,10 +83,10 @@ def run_cfg(cfg: str, gpu: int, clock: Clock, extra=(), tag: str | None = None):
     return launch(cmd, gpu, tag)
 
 
-def main_split(cfg: str, budgets: list[str], prefix: str, clock: Clock) -> list[int]:
+def main_split(cfg: str, budgets: list[str], prefix: str, clock: Clock, split: dict) -> list[int]:
     jobs = [run_cfg(cfg, g, clock, ["--budgets", *budgets, "--tasks", *tasks,
                                     "--output", f"results/{prefix}_gpu{g}.jsonl"], tag=f"{prefix}_gpu{g}")
-            for g, tasks in SPLIT.items()]
+            for g, tasks in split.items()]
     return wait(jobs)
 
 
@@ -105,9 +111,10 @@ def main(argv=None) -> int:
     codes: list[int] = []
     if a.stage == "main_20":
         codes += calibrate("Qwen/Qwen2.5-3B-Instruct", "profiles/qwen2.5-3b-instruct.json")
-        codes += main_split("configs/main_qwen3b.yaml", ["0.2"], "main_qwen3b", clock)
+        codes += main_split("configs/main_qwen3b.yaml", ["0.2"], "main_qwen3b", clock, SPLITS["one_budget"])
     elif a.stage == "main_rest":
-        codes += main_split("configs/main_qwen3b.yaml", ["0.1", "0.3", "0.5"], "main_qwen3b", clock)
+        codes += main_split("configs/main_qwen3b.yaml", ["0.1", "0.3", "0.5"], "main_qwen3b", clock,
+                            SPLITS["three_budgets"])
     elif a.stage == "passkey_ablation":
         codes += wait([run_cfg("configs/passkey_qwen3b.yaml", 0, clock),
                        run_cfg("configs/ablation_qwen3b.yaml", 1, clock)])
@@ -122,7 +129,8 @@ def main(argv=None) -> int:
             print("not enough time left for profiling; rerun this stage", flush=True)
     elif a.stage == "llama":
         codes += calibrate("meta-llama/Llama-3.2-3B-Instruct", "profiles/llama3.2-3b-instruct.json")
-        codes += main_split("configs/llama3b_generalisation.yaml", ["0.2"], "llama3b_generalisation", clock)
+        codes += main_split("configs/llama3b_generalisation.yaml", ["0.2"], "llama3b_generalisation", clock,
+                            SPLITS["llama"])
 
     print(f"stage {a.stage} finished in {(time.time() - t0) / 3600:.2f} h; exit codes {codes}", flush=True)
     if any(codes):

@@ -66,11 +66,27 @@ def _jobs(cfg: dict, methods, budgets):
                 yield m, float(b)
 
 
+def parse_task_slice(spec: str) -> tuple[str, int | None, int | None]:
+    """'gov_report' -> ('gov_report', None, None); 'gov_report[0:68]' -> ('gov_report', 0, 68).
+
+    The slice applies after the config's limit/offset, so a task can be split
+    across GPUs without changing which samples are evaluated overall.
+    """
+    spec = spec.strip()
+    if "[" not in spec:
+        return spec, None, None
+    name, _, rng = spec.partition("[")
+    lo, _, hi = rng.rstrip("]").partition(":")
+    return name, (int(lo) if lo else None), (int(hi) if hi else None)
+
+
 def _samples(cfg: dict, tok) -> Iterator[dict]:
     lb = cfg.get("longbench")
     if lb:
-        for task in lb["tasks"]:
-            for s in load_longbench(task, limit=lb.get("limit"), offset=lb.get("offset", 0)):
+        for spec in lb["tasks"]:
+            task, lo, hi = parse_task_slice(spec)
+            samples = load_longbench(task, limit=lb.get("limit"), offset=lb.get("offset", 0))
+            for s in samples[lo:hi]:
                 yield {
                     "kind": "longbench", "task": task, "idx": s.idx, "category": CATEGORY[task],
                     "ids": None, "sample": s, "max_new": MAX_NEW_TOKENS[task],

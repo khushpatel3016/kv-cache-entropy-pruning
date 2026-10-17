@@ -134,3 +134,37 @@ def test_runner_resume_across_files(tmp_path):
     assert n0 == 2 * 3
     assert len(rows) == 2 * 2
     assert all(r["budget"] == 0.5 for r in rows)
+
+
+def test_task_slice_parsing():
+    from kvprune.run import parse_task_slice as f
+
+    assert f("gov_report") == ("gov_report", None, None)
+    assert f("gov_report[0:67]") == ("gov_report", 0, 67)
+    assert f("lcc[50:]") == ("lcc", 50, None)
+
+
+def test_kaggle_splits_cover_every_sample_once():
+    """Each stage split must evaluate every (task, sample) exactly once across the two GPUs."""
+    import importlib.util
+
+    from kvprune.data.longbench import LONGBENCH_TASKS
+    from kvprune.run import parse_task_slice
+
+    path = os.path.join(os.path.dirname(__file__), "..", "scripts", "kaggle_stage.py")
+    spec = importlib.util.spec_from_file_location("kaggle_stage", path)
+    ks = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ks)
+    limits = {"one_budget": 100, "three_budgets": 100, "llama": 50}
+    tasks = ["qasper", "hotpotqa", "gov_report", "trec", "passage_retrieval_en", "lcc"]
+    for name, split in ks.SPLITS.items():
+        n = limits[name]
+        seen = {t: [0] * n for t in tasks}
+        for gpu_tasks in split.values():
+            for spec_ in gpu_tasks:
+                t, lo, hi = parse_task_slice(spec_)
+                assert t in LONGBENCH_TASKS
+                for i in list(range(n))[lo:hi]:
+                    seen[t][i] += 1
+        for t in tasks:
+            assert seen[t] == [1] * n, (name, t)
