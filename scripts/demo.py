@@ -1,4 +1,4 @@
-"""Live viva demo (runs offline once the model is cached; ~1-2 min on a 6 GB GPU).
+"""Live viva demo (runs offline once the model is cached; ~1-2 min on a laptop CPU).
 
 1. Hides a passkey in a long document and asks for it with: the full cache,
    SnapKV, PyramidKV and EntropyKV at the same small budget.
@@ -7,7 +7,8 @@
    inputs, to show the allocation changes shape with the input while
    PyramidKV's does not.
 
-    python scripts/demo.py --model Qwen/Qwen2.5-1.5B-Instruct --length 4096 --budget 0.1
+    python scripts/demo.py                                   # CPU, Qwen2.5-0.5B, 2K tokens
+    python scripts/demo.py --model Qwen/Qwen2.5-3B-Instruct --length 8192 --budget 0.1   # on a T4
     python scripts/demo.py --doc my_notes.txt --question "Who wrote the report?"
 """
 
@@ -44,8 +45,8 @@ def doc_prompt(tok, path, question, max_len):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", default="Qwen/Qwen2.5-1.5B-Instruct")
-    ap.add_argument("--length", type=int, default=4096)
+    ap.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
+    ap.add_argument("--length", type=int, default=2048)
     ap.add_argument("--depth", type=float, default=0.5)
     ap.add_argument("--budget", type=float, default=0.1)
     ap.add_argument("--doc", help="optional text file to ask a question about")

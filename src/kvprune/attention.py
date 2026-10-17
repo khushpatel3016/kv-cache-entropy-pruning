@@ -15,7 +15,7 @@ tokens (the SnapKV trick), three statistics per layer:
 
 The full ``seq_len x seq_len`` attention matrix is never materialised: we only
 form the ``w x seq_len`` block for the window queries, which is what makes
-this feasible at 8K-16K tokens on a 16 GB T4 (and 4K-8K on a 6 GB laptop GPU).
+this feasible at 8K-16K tokens on a 16 GB T4 (and about 2K tokens on a laptop CPU).
 
 During decoding (query length 1) the backend ignores the attention mask so a
 layer can attend to however many cached tokens it has kept. This is what
