@@ -1,4 +1,4 @@
-# Ablations at 20% budget: temperature tau (incl. the reversed direction tau=-1), floor,
+# Ablations at 10% budget (where allocation matters most; see main results): temperature tau (incl. the reversed direction tau=-1), floor,
 # and the random-allocation control.
 name: ablation_qwen3b
 model: Qwen/Qwen2.5-3B-Instruct
@@ -15,7 +15,7 @@ methods:
   - "random_alloc"
   - "random_alloc:seed=1"
   - "random_alloc:seed=2"
-budgets: [0.2]
+budgets: [0.1]
 longbench:
   tasks: [qasper, hotpotqa, gov_report, trec, passage_retrieval_en, lcc]
   limit: 50

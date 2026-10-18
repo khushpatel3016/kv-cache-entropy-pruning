@@ -4,7 +4,7 @@ model: Qwen/Qwen2.5-3B-Instruct
 dtype: auto
 window: 16
 methods: [snapkv, entropy]
-budgets: [0.2]
+budgets: [0.1]
 longbench:
   tasks: [qasper, hotpotqa, gov_report, trec, passage_retrieval_en, lcc]
   limit: 50
