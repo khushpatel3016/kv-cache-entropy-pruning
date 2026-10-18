@@ -216,7 +216,8 @@ def fig5(df, out):
     ax.barh(avg["label"], 100 * avg["score"], color=cols, edgecolor="0", lw=0.5)
     for y, v in enumerate(avg["score"]):
         ax.text(100 * v + 0.2, y, f"{100 * v:.1f}", va="center", fontsize=7)
-    ax.set_xlabel("LongBench average score at 20% budget")
+    b = sorted(d["budget"].unique())
+    ax.set_xlabel(f"LongBench average score at {int(round(100 * b[0]))}% budget" if len(b) == 1 else "LongBench average score")
     ax.set_title("Ablations (black = entropy variants, light = random control)")
     ax.grid(axis="y", visible=False)
     save(fig, out, "fig5_ablations")
