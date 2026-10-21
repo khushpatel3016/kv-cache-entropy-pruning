@@ -14,6 +14,7 @@ Outputs (PNG at 300 dpi + PDF):
   fig4_passkey_heatmaps     passkey accuracy, depth x length, per method
   fig5_ablations            tau / floor / random-allocation control
   fig6_memory_latency       KV size, decode latency, allocation overhead (RQ4; profile_*.jsonl)
+  fig7_layer_starvation     accuracy change vs the most-starved layer's share (why allocations fail)
 Tables:
   table_main.csv / .md      task x method at the 20% budget (x100)
   table_significance.csv    ours minus each baseline, paired bootstrap CI, per budget
@@ -173,12 +174,15 @@ def fig3(df, out, budget=0.2):
 
 
 # ----------------------------------------------------------------- figure 4
-def fig4(df, out, budget=0.1):
+def fig4(df, out, budget=None):
     d = df[df["task"] == "passkey"] if len(df) else df
     if d.empty:
         return print("  skip fig4: no passkey rows")
+    if budget is None:  # hardest budget available: the one that separates methods most
+        budget = float(d[d["method"] != "full"]["budget"].min())
     d = d[(d["budget"] == budget) | (d["method"] == "full")]
-    methods = [m for m in ["full", "snapkv", "pyramidkv", "cake_style", OURS] if m in set(d["method"])]
+    methods = [m for m in ["full", "snapkv", "pyramidkv", "random_alloc", "cake_style", OURS]
+               if m in set(d["method"])]
     fig, axes = plt.subplots(1, len(methods), figsize=(1.6 * len(methods) + 0.6, 2.0), sharey=True)
     axes = np.atleast_1d(axes)
     for ax, m in zip(axes, methods):
@@ -194,31 +198,51 @@ def fig4(df, out, budget=0.1):
         ax.set_xlabel("Context length")
     axes[0].set_ylabel("Needle depth")
     fig.colorbar(im, ax=axes, shrink=0.8, label="Accuracy (%)")
-    fig.suptitle(f"Passkey retrieval at {int(budget * 100)}% budget", fontsize=9.5, y=1.08)
+    fig.suptitle(f"Passkey retrieval at {budget * 100:g}% budget", fontsize=9.5, y=1.08)
     save(fig, out, "fig4_passkey_heatmaps")
 
 
 # ----------------------------------------------------------------- figure 5
-def fig5(df, out):
+ABL_LABEL = {
+    "entropy": "Entropy, τ = 1 (ours)", "entropy:tau=0.5": "Entropy, τ = 0.5", "entropy:tau=2": "Entropy, τ = 2",
+    "entropy:tau=-1": "Entropy reversed, τ = −1", "entropy:floor=16": "Entropy, floor 16",
+    "entropy:floor=64": "Entropy, floor 64", "random_alloc": "Random split, seed 0",
+    "random_alloc:seed=1": "Random split, seed 1", "random_alloc:seed=2": "Random split, seed 2",
+}
+
+
+def fig5(df, out, base="snapkv"):
+    """Each ablation variant minus SnapKV on the same samples, with paired 95% bootstrap CI."""
     d = lb(df)
-    if d.empty:
+    if d.empty or "experiment" not in d:
         return print("  skip fig5: no rows")
-    d = d[d["experiment"].astype(str).str.startswith("ablation")] if "experiment" in d else d
+    d = d[d["experiment"].astype(str).str.startswith("ablation")]
     if d.empty:
         return print("  skip fig5: no ablation rows")
-    per = d.groupby(["experiment", "method", "task"])["score"].mean().reset_index()
-    avg = per.groupby(["experiment", "method"])["score"].mean().reset_index()
-    avg["label"] = avg.apply(lambda r: r["method"] + ("" if r["experiment"] == "ablation_qwen3b"
-                                                      else f" ({r['experiment'].split('_')[1]})"), axis=1)
-    avg = avg.sort_values("score")
-    fig, ax = plt.subplots(figsize=(3.5, 0.28 * len(avg) + 0.8))
-    cols = ["0.0" if l.startswith("entropy") else ("0.75" if "random" in l else "0.5") for l in avg["label"]]
-    ax.barh(avg["label"], 100 * avg["score"], color=cols, edgecolor="0", lw=0.5)
-    for y, v in enumerate(avg["score"]):
-        ax.text(100 * v + 0.2, y, f"{100 * v:.1f}", va="center", fontsize=7)
+    pts = []
+    for (exp, m), g in d.groupby(["experiment", "method"]):
+        if m == base:
+            continue
+        ref = d[(d["experiment"] == exp) & (d["method"] == base)].set_index(["task", "idx"])["score"]
+        j = g.set_index(["task", "idx"])["score"].to_frame("a").join(ref.to_frame("b"), how="inner")
+        if len(j) < 2:
+            continue
+        diff, lo, hi, _ = paired_bootstrap(j["a"], j["b"])
+        lab = ABL_LABEL.get(m, m)
+        if exp != "ablation_qwen3b":
+            lab += f" (window {exp.split('window')[-1].split('_')[0]})"
+        pts.append((lab, 100 * diff, 100 * lo, 100 * hi, m.startswith("random")))
+    pts.sort(key=lambda r: r[1])
+    fig, ax = plt.subplots(figsize=(3.5, 0.27 * len(pts) + 0.9))
+    for y, (lab, mdiff, lo, hi, rnd) in enumerate(pts):
+        ax.errorbar(mdiff, y, xerr=[[mdiff - lo], [hi - mdiff]], fmt="s" if rnd else "o",
+                    color="0.6" if rnd else "0", ms=4, capsize=2, lw=0.9)
+    ax.axvline(0, color="0", lw=0.8)
+    ax.set_yticks(range(len(pts)), [p[0] for p in pts], fontsize=7)
     b = sorted(d["budget"].unique())
-    ax.set_xlabel(f"LongBench average score at {int(round(100 * b[0]))}% budget" if len(b) == 1 else "LongBench average score")
-    ax.set_title("Ablations (black = entropy variants, light = random control)")
+    bl = f" at {b[0] * 100:g}% budget" if len(b) == 1 else ""
+    ax.set_xlabel(f"Score change vs SnapKV (points){bl}")
+    ax.set_title("Ablations (95% CI): entropy variants vs random splits")
     ax.grid(axis="y", visible=False)
     save(fig, out, "fig5_ablations")
 
@@ -258,6 +282,50 @@ def fig6(prof, out):
     fig.text(0.5, -0.12, f"EntropyKV allocation + selection overhead: {ovh:.1f} ms per prompt "
                          f"(one-time, after prefill)", ha="center", fontsize=8)
     save(fig, out, "fig6_memory_latency")
+
+
+# ----------------------------------------------------------------- figure 7
+def fig7(df, out, budget=0.1, base="snapkv"):
+    """Accuracy change vs. how much the most-starved layer gets (share relative to uniform)."""
+    if df.empty or "layer_budgets" not in df:
+        return print("  skip fig7: no rows")
+    d = df[(df["task"] != "passkey") & (df["budget"] == budget) & (df["method"] != "streaming")]
+    if d.empty:
+        return print(f"  skip fig7: no rows at budget {budget}")
+    pts = []
+    for (exp, m), g in d.groupby(["experiment", "method"]):
+        if m == base:
+            continue
+        ref = d[(d["experiment"] == exp) & (d["method"] == base)].set_index(["task", "idx"])["score"]
+        j = g.set_index(["task", "idx"])["score"].to_frame("a").join(ref.to_frame("b"), how="inner")
+        if len(j) < 20:
+            continue
+        diff, lo, hi, _ = paired_bootstrap(j["a"], j["b"])
+        share = g["layer_budgets"].apply(lambda b: min(b) / (sum(b) / len(b))).mean()
+        pts.append((exp, m, share, 100 * diff, 100 * lo, 100 * hi))
+    if not pts:
+        return print("  skip fig7: nothing to compare")
+    fig, ax = plt.subplots(figsize=(3.5, 2.6))
+    # One label per method, taken from the main experiment (ablation repeats stay unlabelled),
+    # except the reversed-entropy variant, which only exists in the ablation run.
+    offs = {"entropy:tau=-1": (-22, 14), "entropy": (8, -14), "pyramidkv": (-4, -16),
+            "cake_style": (6, 4), "random_alloc": (8, -2)}
+    labelled = set()
+    for exp, m, x, y, lo, hi in pts:
+        base_m = m.split(":")[0]
+        g_, mk, _, _, _ = STYLE.get(base_m, ("0.5", "o", "-", 1, m))
+        ax.errorbar(x, y, yerr=[[y - lo], [hi - y]], fmt=mk or "o", color=g_, ms=5, capsize=2, lw=0.8,
+                    mec="0", mew=0.5)
+        main_only = m in ("entropy", "random_alloc", "pyramidkv", "cake_style")
+        if m in offs and m not in labelled and (not main_only or exp == "main_qwen3b"):
+            labelled.add(m)
+            lab = {"entropy:tau=-1": "Reversed (τ=−1)", "random_alloc": "Random"}.get(m, name_of(base_m))
+            ax.annotate(lab, (x, y), xytext=offs[m], textcoords="offset points", fontsize=6.5)
+    ax.axhline(0, color="0", lw=0.8)
+    ax.set_xlabel("Smallest layer budget / uniform share")
+    ax.set_ylabel(f"Score change vs SnapKV (points)")
+    ax.set_title(f"Starving a layer drives the loss ({budget * 100:g}% budget)")
+    save(fig, out, "fig7_layer_starvation")
 
 
 # ------------------------------------------------------------------ tables
@@ -329,6 +397,7 @@ def main(argv=None):
     fig4(df, a.out)
     fig5(df, a.out)
     fig6(prof, a.out)
+    fig7(df[df["experiment"].astype(str).isin([a.main_experiment, "ablation_qwen3b"])] if len(df) else df, a.out)
     tables(main, a.out, a.budget)
 
 

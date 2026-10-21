@@ -19,6 +19,7 @@ import time
 
 PY = sys.executable
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+POLL = 300  # seconds between progress prints (tests lower this)
 SHORT = ["qasper", "hotpotqa", "trec", "passage_retrieval_en", "lcc"]
 # Balanced from timings measured on Kaggle T4s (Qwen2.5-3B, 8K context): gov_report writes
 # 512-token summaries (~3.2 min/sample for 8 decodes) while the five other tasks together take
@@ -33,7 +34,7 @@ STAGES = {
     "main_20": "calibration + main experiment at 20% budget",
     "main_rest": "main experiment at 10%, 30%, 50%",
     "passkey_ablation": "passkey heatmaps (GPU 0) + ablations (GPU 1)",
-    "window_profile": "window 16 / 64 ablations + memory/latency profiling",
+    "window_profile": "window 16/64 ablations, memory/latency profiling, passkey at 2%/5%",
     "llama": "Llama-3.2-3B generalisation at 20%",
 }
 
@@ -57,7 +58,8 @@ def launch(cmd: list[str], gpu: int, tag: str):
     return subprocess.Popen(cmd, env=_env(gpu), cwd=ROOT, stdout=open(log, "a"), stderr=subprocess.STDOUT), log
 
 
-def wait(jobs, poll: int = 300) -> list[int]:
+def wait(jobs, poll: int | None = None) -> list[int]:
+    poll = POLL if poll is None else poll
     procs = [p for p, _ in jobs]
     while any(p.poll() is None for p in procs):
         time.sleep(poll)
@@ -81,6 +83,38 @@ def run_cfg(cfg: str, gpu: int, clock: Clock, extra=(), tag: str | None = None):
     tag = tag or os.path.basename(cfg).replace(".yaml", "")
     cmd = [PY, "-m", "kvprune.run", "--config", cfg, "--max-hours", f"{clock.left():.3f}", *extra]
     return launch(cmd, gpu, tag)
+
+
+def run_chains(chains: dict, clock: Clock) -> list[int]:
+    """Run a list of steps per GPU, GPUs in parallel, steps in order. Each step is
+    (kind, arg, tag) where kind is "cfg" (a kvprune.run config) or "cmd" (a command list).
+    Every step receives the time left at the moment it starts, so the stage deadline holds."""
+    import threading
+
+    codes: list[int] = []
+    lock = threading.Lock()
+
+    def worker(gpu, steps):
+        for kind, arg, tag in steps:
+            left = clock.left()
+            if left < 0.2:
+                print(f"[skip] gpu{gpu} {tag}: not enough time left; rerun this stage", flush=True)
+                with lock:
+                    codes.append(0)
+                continue
+            if kind == "cfg":
+                job = run_cfg(arg, gpu, clock, tag=tag)
+            else:
+                job = launch(arg, gpu, tag)
+            with lock:
+                codes.extend(wait([job]))
+
+    threads = [threading.Thread(target=worker, args=(g, st)) for g, st in chains.items()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return codes
 
 
 def main_split(cfg: str, budgets: list[str], prefix: str, clock: Clock, split: dict) -> list[int]:
@@ -119,14 +153,14 @@ def main(argv=None) -> int:
         codes += wait([run_cfg("configs/passkey_qwen3b.yaml", 0, clock),
                        run_cfg("configs/ablation_qwen3b.yaml", 1, clock)])
     elif a.stage == "window_profile":
-        codes += wait([run_cfg("configs/ablation_window16_qwen3b.yaml", 0, clock),
-                       run_cfg("configs/ablation_window64_qwen3b.yaml", 1, clock)])
-        if clock.left() > 0.75:
-            codes += wait([launch([PY, "scripts/profile_memory.py", "--model", "Qwen/Qwen2.5-3B-Instruct",
-                                   "--lengths", "4096", "8192", "16384",
-                                   "--out", "results/profile_qwen3b.jsonl"], 0, "profile")])
-        else:
-            print("not enough time left for profiling; rerun this stage", flush=True)
+        profile_cmd = [PY, "scripts/profile_memory.py", "--model", "Qwen/Qwen2.5-3B-Instruct",
+                       "--lengths", "4096", "8192", "16384", "--out", "results/profile_qwen3b.jsonl"]
+        codes += run_chains({
+            0: [("cfg", "configs/ablation_window16_qwen3b.yaml", "ablation_window16_qwen3b"),
+                ("cmd", profile_cmd, "profile")],
+            1: [("cfg", "configs/ablation_window64_qwen3b.yaml", "ablation_window64_qwen3b"),
+                ("cfg", "configs/passkey_extreme_qwen3b.yaml", "passkey_extreme_qwen3b")],
+        }, clock)
     elif a.stage == "llama":
         codes += calibrate("meta-llama/Llama-3.2-3B-Instruct", "profiles/llama3.2-3b-instruct.json")
         codes += main_split("configs/llama3b_generalisation.yaml", ["0.2"], "llama3b_generalisation", clock,
