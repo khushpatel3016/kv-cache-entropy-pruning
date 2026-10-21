@@ -168,3 +168,34 @@ def test_kaggle_splits_cover_every_sample_once():
                     seen[t][i] += 1
         for t in tasks:
             assert seen[t] == [1] * n, (name, t)
+
+
+def test_kaggle_stage_chains_order_parallel_and_deadline(tmp_path, monkeypatch):
+    """Steps on one GPU run in order; GPUs run in parallel; steps past the deadline are skipped."""
+    import importlib.util
+    import sys as _sys
+    import time as _time
+
+    path = os.path.join(os.path.dirname(__file__), "..", "scripts", "kaggle_stage.py")
+    spec = importlib.util.spec_from_file_location("kaggle_stage_t", path)
+    ks = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ks)
+    monkeypatch.setattr(ks, "ROOT", str(tmp_path))
+    monkeypatch.setattr(ks, "POLL", 0.05)
+    out = tmp_path / "order.txt"
+
+    def step(tag, sleep=0.3):
+        code = f"import time; time.sleep({sleep}); open(r'{out}', 'a').write('{tag}\\n')"
+        return ("cmd", [_sys.executable, "-c", code], tag)
+
+    t0 = _time.time()
+    codes = ks.run_chains({0: [step("a1"), step("a2")], 1: [step("b1"), step("b2")]}, ks.Clock(1.0))
+    elapsed = _time.time() - t0
+    lines = out.read_text().split()
+    assert codes == [0, 0, 0, 0]
+    assert lines.index("a1") < lines.index("a2") and lines.index("b1") < lines.index("b2")
+    assert elapsed < 2.0  # parallel: ~0.6 s, sequential would be >= 1.2 s plus overhead
+
+    out.unlink()
+    codes = ks.run_chains({0: [step("late")]}, ks.Clock(0.1))  # less than 0.2 h left -> skipped
+    assert codes == [0] and not out.exists()
