@@ -1,0 +1,16 @@
+# Follow-up to passkey_extreme: at 2% of a 4K prompt EntropyKV (58%) fell below SnapKV (88%)
+# and CAKE-style (100%). EntropyKV gives the low-entropy middle layers the fewest tokens; CAKE-style
+# gives them the most. This run tests that explanation directly: if reversing the direction
+# (tau = -1, more tokens to low-entropy layers) recovers accuracy, the middle layers are where
+# retrieval happens. 30 trials per depth for tighter intervals.
+name: passkey_confirm_qwen3b
+model: Qwen/Qwen2.5-3B-Instruct
+dtype: auto
+window: 32
+methods: [snapkv, entropy, "entropy:tau=-1", cake_style]
+budgets: [0.02, 0.03]
+passkey:
+  lengths: [4096]
+  depths: [0.0, 0.25, 0.5, 0.75, 1.0]
+  trials: 30
+output: results/passkey_confirm_qwen3b.jsonl
