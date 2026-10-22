@@ -275,8 +275,8 @@ def fig6(prof, out):
     axes[1].set_ylabel("Decode latency (ms / token)")
     for ax in axes:
         ax.set_xlabel("KV cache budget (%)")
-    axes[0].set_title(f"Memory at {L // 1024}K context")
-    axes[1].set_title(f"Decode latency at {L // 1024}K context")
+    axes[0].set_title(f"Memory at {round(L / 1024)}K context")
+    axes[1].set_title(f"Decode latency at {round(L / 1024)}K context")
     axes[1].legend(frameon=False, fontsize=7)
     ovh = g[g["method"] == OURS]["ovh"].mean() if OURS in set(g["method"]) else float("nan")
     fig.text(0.5, -0.12, f"EntropyKV allocation + selection overhead: {ovh:.1f} ms per prompt "

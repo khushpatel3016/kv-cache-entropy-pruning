@@ -36,6 +36,7 @@ STAGES = {
     "passkey_ablation": "passkey heatmaps (GPU 0) + ablations (GPU 1)",
     "window_profile": "window 16/64 ablations, memory/latency profiling, passkey at 2%/5%",
     "llama": "Llama-3.2-3B generalisation at 20%",
+    "confirm": "passkey at 2%/3% of 4K: entropy vs reversed entropy vs SnapKV vs CAKE-style (~30 min)",
 }
 
 
@@ -161,6 +162,14 @@ def main(argv=None) -> int:
             1: [("cfg", "configs/ablation_window64_qwen3b.yaml", "ablation_window64_qwen3b"),
                 ("cfg", "configs/passkey_extreme_qwen3b.yaml", "passkey_extreme_qwen3b")],
         }, clock)
+    elif a.stage == "confirm":
+        cfg = "configs/passkey_confirm_qwen3b.yaml"
+        codes += wait([
+            run_cfg(cfg, 0, clock, ["--methods", "snapkv", "entropy",
+                                    "--output", "results/passkey_confirm_qwen3b_gpu0.jsonl"], tag="confirm_gpu0"),
+            run_cfg(cfg, 1, clock, ["--methods", "entropy:tau=-1", "cake_style",
+                                    "--output", "results/passkey_confirm_qwen3b_gpu1.jsonl"], tag="confirm_gpu1"),
+        ])
     elif a.stage == "llama":
         codes += calibrate("meta-llama/Llama-3.2-3B-Instruct", "profiles/llama3.2-3b-instruct.json")
         codes += main_split("configs/llama3b_generalisation.yaml", ["0.2"], "llama3b_generalisation", clock,
