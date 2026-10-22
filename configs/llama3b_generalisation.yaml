@@ -1,13 +1,15 @@
-# Does the result transfer to a second model family? 20% budget only.
-# Needs Hugging Face access to meta-llama (request on the model page, then `huggingface-cli login`).
+# Does the result transfer to a second model family (Llama-3.2-3B, 28 layers, GQA 24/8)?
+# 10% is where methods separate on Qwen; 20% is the main comparison budget.
+# The reversed variant (tau = -1) tests whether the direction finding also holds here.
+# Needs Hugging Face access to meta-llama (request on the model page; Kaggle secret HF_TOKEN).
 name: llama3b_generalisation
 model: meta-llama/Llama-3.2-3B-Instruct
 dtype: auto
 window: 32
 max_len: 8192
 static_profile: profiles/llama3.2-3b-instruct.json
-methods: [full, snapkv, pyramidkv, entropy_static, entropy, cake_style]
-budgets: [0.2]
+methods: [full, snapkv, pyramidkv, entropy_static, entropy, "entropy:tau=-1", cake_style]
+budgets: [0.1, 0.2]
 longbench:
   tasks: [qasper, hotpotqa, gov_report, trec, passage_retrieval_en, lcc]
   limit: 50
