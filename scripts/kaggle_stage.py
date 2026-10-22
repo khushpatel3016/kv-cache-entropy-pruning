@@ -27,7 +27,7 @@ SHORT = ["qasper", "hotpotqa", "trec", "passage_retrieval_en", "lcc"]
 SPLITS = {
     "one_budget": {0: ["gov_report[0:75]"], 1: ["gov_report[75:100]", *SHORT]},      # ~4 h each
     "three_budgets": {0: ["gov_report[0:67]"], 1: ["gov_report[67:100]", *SHORT]},   # ~9.5 h each
-    "llama": {0: ["gov_report[0:35]"], 1: ["gov_report[35:50]", *SHORT]},             # ~1.5 h each
+    "llama": {0: ["gov_report[0:35]"], 1: ["gov_report[35:50]", *SHORT]},             # ~3.5 h each (2 budgets)
 }
 
 STAGES = {
@@ -35,7 +35,7 @@ STAGES = {
     "main_rest": "main experiment at 10%, 30%, 50%",
     "passkey_ablation": "passkey heatmaps (GPU 0) + ablations (GPU 1)",
     "window_profile": "window 16/64 ablations, memory/latency profiling, passkey at 2%/5%",
-    "llama": "Llama-3.2-3B generalisation at 20%",
+    "llama": "Llama-3.2-3B generalisation at 10% and 20% + passkey direction test (~4 h)",
     "confirm": "passkey at 2%/3% of 4K: entropy vs reversed entropy vs SnapKV vs CAKE-style (~30 min)",
 }
 
@@ -88,7 +88,8 @@ def run_cfg(cfg: str, gpu: int, clock: Clock, extra=(), tag: str | None = None):
 
 def run_chains(chains: dict, clock: Clock) -> list[int]:
     """Run a list of steps per GPU, GPUs in parallel, steps in order. Each step is
-    (kind, arg, tag) where kind is "cfg" (a kvprune.run config) or "cmd" (a command list).
+    (kind, arg, tag) or (kind, arg, tag, extra_args) where kind is "cfg" (a kvprune.run config)
+    or "cmd" (a command list).
     Every step receives the time left at the moment it starts, so the stage deadline holds."""
     import threading
 
@@ -96,7 +97,7 @@ def run_chains(chains: dict, clock: Clock) -> list[int]:
     lock = threading.Lock()
 
     def worker(gpu, steps):
-        for kind, arg, tag in steps:
+        for kind, arg, tag, *rest in steps:
             left = clock.left()
             if left < 0.2:
                 print(f"[skip] gpu{gpu} {tag}: not enough time left; rerun this stage", flush=True)
@@ -104,7 +105,7 @@ def run_chains(chains: dict, clock: Clock) -> list[int]:
                     codes.append(0)
                 continue
             if kind == "cfg":
-                job = run_cfg(arg, gpu, clock, tag=tag)
+                job = run_cfg(arg, gpu, clock, rest[0] if rest else (), tag=tag)
             else:
                 job = launch(arg, gpu, tag)
             with lock:
@@ -172,8 +173,18 @@ def main(argv=None) -> int:
         ])
     elif a.stage == "llama":
         codes += calibrate("meta-llama/Llama-3.2-3B-Instruct", "profiles/llama3.2-3b-instruct.json")
-        codes += main_split("configs/llama3b_generalisation.yaml", ["0.2"], "llama3b_generalisation", clock,
-                            SPLITS["llama"])
+        cfg, pk = "configs/llama3b_generalisation.yaml", "configs/passkey_confirm_llama3b.yaml"
+        chains = {g: [("cfg", cfg, f"llama3b_generalisation_gpu{g}",
+                       ["--budgets", "0.1", "0.2", "--tasks", *tasks,
+                        "--output", f"results/llama3b_generalisation_gpu{g}.jsonl"])]
+                  for g, tasks in SPLITS["llama"].items()}
+        # The short passkey test goes after the LongBench share on each GPU, split by method.
+        chains[0].append(("cfg", pk, "passkey_confirm_llama3b_gpu0",
+                          ["--methods", "snapkv", "entropy", "--output", "results/passkey_confirm_llama3b_gpu0.jsonl"]))
+        chains[1].append(("cfg", pk, "passkey_confirm_llama3b_gpu1",
+                          ["--methods", "entropy:tau=-1", "cake_style",
+                           "--output", "results/passkey_confirm_llama3b_gpu1.jsonl"]))
+        codes += run_chains(chains, clock)
 
     print(f"stage {a.stage} finished in {(time.time() - t0) / 3600:.2f} h; exit codes {codes}", flush=True)
     if any(codes):
