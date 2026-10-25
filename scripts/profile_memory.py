@@ -51,7 +51,7 @@ def main(argv=None):
     gen = PrunedGenerator(model, tok)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
 
-    with open(a.out, "a") as f:
+    with open(a.out, "a", encoding="utf-8") as f:
         for length in a.lengths:
             ids, _ = make_passkey_prompt(tok, length, 0.5, seed=0)
             for name in a.methods:

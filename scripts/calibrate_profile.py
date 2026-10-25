@@ -73,7 +73,7 @@ def main(argv=None):
         "source": a.source,
     }
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    with open(a.out, "w") as f:
+    with open(a.out, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
     print("saved", a.out)
 

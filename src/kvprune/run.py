@@ -195,7 +195,7 @@ def main(argv=None):
     ap.add_argument("--methods", nargs="+", help="override methods")
     ap.add_argument("--max-hours", type=float, help="stop cleanly (before the next sample) after this many hours")
     a = ap.parse_args(argv)
-    with open(a.config) as f:
+    with open(a.config, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     if a.budgets:
         cfg["budgets"] = a.budgets

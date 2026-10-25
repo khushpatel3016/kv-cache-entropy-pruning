@@ -395,7 +395,7 @@ def table_llama(df, out, exp="llama3b_generalisation"):
                         "p_boot": p, "significant": bool(lo > 0 or hi < 0)})
     t = pd.concat(rows)
     t.round(2).to_csv(os.path.join(out, "table_llama.csv"))
-    with open(os.path.join(out, "table_llama.md"), "w") as f:
+    with open(os.path.join(out, "table_llama.md"), "w", encoding="utf-8") as f:
         f.write("Llama-3.2-3B-Instruct, LongBench scores (x100), 50 samples per task.\n\n")
         f.write(t.round(2).to_markdown() if hasattr(t, "to_markdown") else t.round(2).to_string())
         f.write("\n")
@@ -416,7 +416,7 @@ def tables(df, out, budget=0.2):
     t = t.reindex([m for m in ORDER if m in t.index] + [m for m in t.index if m not in ORDER])
     t.index = [name_of(m) for m in t.index]
     t.round(2).to_csv(os.path.join(out, "table_main.csv"))
-    with open(os.path.join(out, "table_main.md"), "w") as f:
+    with open(os.path.join(out, "table_main.md"), "w", encoding="utf-8") as f:
         f.write(f"LongBench scores (x100) at {int(budget * 100)}% KV budget; full cache is the upper bound.\n\n")
         f.write(t.round(2).to_markdown() if hasattr(t, "to_markdown") else t.round(2).to_string())
         f.write("\n")

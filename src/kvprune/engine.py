@@ -170,7 +170,7 @@ class PrunedGenerator:
     # -- static profile -----------------------------------------------------
     def set_static_profile(self, profile: Sequence[float] | str) -> None:
         if isinstance(profile, str):
-            with open(profile) as f:
+            with open(profile, encoding="utf-8") as f:
                 profile = json.load(f)["entropies"]
         profile = [float(x) for x in profile]
         if len(profile) != self.num_layers:
