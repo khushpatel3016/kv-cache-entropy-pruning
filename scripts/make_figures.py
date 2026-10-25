@@ -16,7 +16,9 @@ Outputs (PNG at 300 dpi + PDF):
   fig6_memory_latency       KV size, decode latency, allocation overhead (RQ4; profile_*.jsonl)
   fig7_layer_starvation     accuracy change vs the most-starved layer's share (why allocations fail)
 Tables:
+  fig8_direction_test       passkey at 2% of 4K: entropy vs reversed vs SnapKV vs CAKE, both models
   table_main.csv / .md      task x method at the 20% budget (x100)
+  table_llama.csv / .md     Llama-3.2-3B at 10% and 20%, plus table_llama_significance.csv
   table_significance.csv    ours minus each baseline, paired bootstrap CI, per budget
 """
 
@@ -176,6 +178,8 @@ def fig3(df, out, budget=0.2):
 # ----------------------------------------------------------------- figure 4
 def fig4(df, out, budget=None):
     d = df[df["task"] == "passkey"] if len(df) else df
+    if len(d) and "experiment" in d:  # Qwen heatmap runs only (confirm runs are Fig 8)
+        d = d[d["experiment"].astype(str).isin(["passkey_qwen3b", "passkey_extreme_qwen3b"])]
     if d.empty:
         return print("  skip fig4: no passkey rows")
     if budget is None:  # hardest budget available: the one that separates methods most
@@ -328,6 +332,78 @@ def fig7(df, out, budget=0.1, base="snapkv"):
     save(fig, out, "fig7_layer_starvation")
 
 
+# ----------------------------------------------------------------- figure 8
+DIR_METHODS = [("snapkv", "SnapKV\n(equal)"), ("entropy", "EntropyKV\n(τ = 1)"),
+               ("entropy:tau=-1", "Reversed\n(τ = −1)"), ("cake_style", "CAKE-style")]
+
+
+def fig8(df, out, budget=0.02):
+    """Direction test: passkey at 2% of a 4K prompt, both models, 95% bootstrap CI."""
+    d = df[df["experiment"].astype(str).str.startswith("passkey_confirm")] if len(df) and "experiment" in df else df
+    d = d[d["budget"] == budget] if len(d) else d
+    if d.empty:
+        return print("  skip fig8: no passkey_confirm rows")
+    models = [e for e in ["passkey_confirm_qwen3b", "passkey_confirm_llama3b"] if e in set(d["experiment"])]
+    mlabel = {"passkey_confirm_qwen3b": "Qwen2.5-3B", "passkey_confirm_llama3b": "Llama-3.2-3B"}
+    fig, ax = plt.subplots(figsize=(3.5, 2.4))
+    w = 0.8 / len(models)
+    rng = np.random.default_rng(0)
+    for k, e in enumerate(models):
+        for i, (m, _) in enumerate(DIR_METHODS):
+            s = d[(d["experiment"] == e) & (d["method"] == m)]["score"].to_numpy()
+            if not len(s):
+                continue
+            boots = rng.choice(s, (2000, len(s))).mean(1)
+            mu, lo, hi = 100 * s.mean(), 100 * np.percentile(boots, 2.5), 100 * np.percentile(boots, 97.5)
+            ax.bar(i + (k - (len(models) - 1) / 2) * w, mu, w * 0.92, color=["0.25", "0.7"][k],
+                   yerr=[[mu - lo], [hi - mu]], capsize=2, error_kw={"lw": 0.8},
+                   label=mlabel[e] if i == 0 else None)
+    ax.set_xticks(range(len(DIR_METHODS)), [l for _, l in DIR_METHODS], fontsize=7)
+    ax.set_ylim(0, 122)
+    ax.set_yticks([0, 20, 40, 60, 80, 100])
+    ax.set_ylabel("Passkey accuracy (%)")
+    ax.set_title(f"Which layers deserve memory? ({budget * 100:g}% of a 4K prompt)")
+    ax.legend(frameon=False, fontsize=7, loc="upper center", ncol=2)
+    ax.grid(axis="x", visible=False)
+    save(fig, out, "fig8_direction_test")
+
+
+# ------------------------------------------------------------- Llama table
+def table_llama(df, out, exp="llama3b_generalisation"):
+    d = lb(df)
+    d = d[d["experiment"].astype(str) == exp] if len(d) and "experiment" in d else d.iloc[0:0]
+    if d.empty:
+        return print("  skip table_llama: no Llama rows")
+    rows, sig = [], []
+    for b in sorted(x for x in d["budget"].unique() if x < 1.0):
+        sub = d[(d["budget"] == b) | (d["method"] == "full")]
+        t = sub.groupby(["method", "task"])["score"].mean().unstack("task") * 100
+        t.columns = [TASK_LABEL.get(c, c) for c in t.columns]
+        t["Average"] = t.mean(axis=1)
+        order = [m for m in ORDER if m in t.index] + [m for m in t.index if m not in ORDER]
+        t = t.reindex(order)
+        t.index = [f"{name_of(m) if m != 'entropy:tau=-1' else 'EntropyKV reversed (τ=−1)'}" for m in t.index]
+        t.insert(0, "Budget", f"{b * 100:g}%")
+        rows.append(t)
+        for c in [m for m in set(d["method"]) if m not in ("full", OURS)]:
+            j = _paired(d, OURS, c, b)
+            if len(j) < 2:
+                continue
+            m_, lo, hi, p = paired_bootstrap(j["a"], j["b"])
+            sig.append({"budget": b, "baseline": name_of(c) if c != "entropy:tau=-1" else "EntropyKV reversed",
+                        "n_pairs": len(j), "diff_x100": 100 * m_, "ci_low": 100 * lo, "ci_high": 100 * hi,
+                        "p_boot": p, "significant": bool(lo > 0 or hi < 0)})
+    t = pd.concat(rows)
+    t.round(2).to_csv(os.path.join(out, "table_llama.csv"))
+    with open(os.path.join(out, "table_llama.md"), "w") as f:
+        f.write("Llama-3.2-3B-Instruct, LongBench scores (x100), 50 samples per task.\n\n")
+        f.write(t.round(2).to_markdown() if hasattr(t, "to_markdown") else t.round(2).to_string())
+        f.write("\n")
+    if sig:
+        pd.DataFrame(sig).round(3).to_csv(os.path.join(out, "table_llama_significance.csv"), index=False)
+    print("  wrote table_llama")
+
+
 # ------------------------------------------------------------------ tables
 def tables(df, out, budget=0.2):
     d = lb(df)
@@ -398,7 +474,9 @@ def main(argv=None):
     fig5(df, a.out)
     fig6(prof, a.out)
     fig7(df[df["experiment"].astype(str).isin([a.main_experiment, "ablation_qwen3b"])] if len(df) else df, a.out)
+    fig8(df, a.out)
     tables(main, a.out, a.budget)
+    table_llama(df, a.out)
 
 
 if __name__ == "__main__":
