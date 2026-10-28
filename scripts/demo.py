@@ -10,6 +10,7 @@
     python scripts/demo.py                                   # CPU, Qwen2.5-0.5B, 2K tokens
     python scripts/demo.py --model Qwen/Qwen2.5-3B-Instruct --length 8192 --budget 0.1   # on a T4
     python scripts/demo.py --doc my_notes.txt --question "Who wrote the report?"
+    python scripts/demo.py --device mps                      # Apple Silicon MacBook GPU
 """
 
 from __future__ import annotations
@@ -52,9 +53,11 @@ def main(argv=None):
     ap.add_argument("--doc", help="optional text file to ask a question about")
     ap.add_argument("--question", default="What is this document about?")
     ap.add_argument("--out", default="figures/demo_budgets.png")
+    ap.add_argument("--device", default="auto", help="auto | cuda | mps | cpu")
     a = ap.parse_args(argv)
 
-    model, tok = load_model(a.model)
+    model, tok = load_model(a.model, device=a.device)
+    print("device:", model.device, flush=True)
     gen = PrunedGenerator(model, tok)
 
     ids, key = make_passkey_prompt(tok, a.length, a.depth, seed=42)

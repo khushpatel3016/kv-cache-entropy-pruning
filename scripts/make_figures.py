@@ -19,6 +19,7 @@ Tables:
   fig8_direction_test       passkey at 2% of 4K: entropy vs reversed vs SnapKV vs CAKE, both models
   table_main.csv / .md      task x method at the 20% budget (x100)
   table_llama.csv / .md     Llama-3.2-3B at 10% and 20%, plus table_llama_significance.csv
+  fig10_mac_memory_latency  + table_mac.md: on-device study on Apple Silicon (MacBook, MPS)
   table_significance.csv    ours minus each baseline, paired bootstrap CI, per budget
 """
 
@@ -252,9 +253,9 @@ def fig5(df, out, base="snapkv"):
 
 
 # ----------------------------------------------------------------- figure 6
-def fig6(prof, out):
+def fig6(prof, out, name="fig6_memory_latency", where=""):
     if prof is None or prof.empty:
-        return print("  skip fig6: no profile_*.jsonl rows (run scripts/profile_memory.py)")
+        return print(f"  skip {name}: no profile rows (run scripts/profile_memory.py)")
     L = int(prof["length"].max())
     p = prof[prof["length"] == L]
     g = p.groupby(["method", "budget"]).agg(kv=("kv_mb", "mean"), dec=("decode_ms_tok", "mean"),
@@ -279,13 +280,39 @@ def fig6(prof, out):
     axes[1].set_ylabel("Decode latency (ms / token)")
     for ax in axes:
         ax.set_xlabel("KV cache budget (%)")
-    axes[0].set_title(f"Memory at {round(L / 1024)}K context")
-    axes[1].set_title(f"Decode latency at {round(L / 1024)}K context")
+    axes[0].set_title(f"Memory at {round(L / 1024)}K context{where}")
+    axes[1].set_title(f"Decode latency at {round(L / 1024)}K context{where}")
     axes[1].legend(frameon=False, fontsize=7)
     ovh = g[g["method"] == OURS]["ovh"].mean() if OURS in set(g["method"]) else float("nan")
     fig.text(0.5, -0.12, f"EntropyKV allocation + selection overhead: {ovh:.1f} ms per prompt "
                          f"(one-time, after prefill)", ha="center", fontsize=8)
-    save(fig, out, "fig6_memory_latency")
+    save(fig, out, name)
+
+
+# ------------------------------------------------- Apple Silicon (MacBook) study
+def mac_study(df, prof, out):
+    """Memory/latency figure and a summary table for the on-device (Apple MPS) runs."""
+    mp = prof[prof["gpu"].astype(str).str.startswith("mps")] if prof is not None and "gpu" in prof else None
+    if mp is not None and not mp.empty:
+        fig6(mp, out, "fig10_mac_memory_latency", " (MacBook, MPS)")
+    lines = []
+    if mp is not None and not mp.empty:
+        g = mp.groupby(["length", "method", "budget"]).agg(
+            kv_mb=("kv_mb", "mean"), decode_ms_tok=("decode_ms_tok", "mean"),
+            overhead_ms=("overhead_ms", "mean"), prefill_ms=("prefill_ms", "mean")).reset_index()
+        g.round(2).to_csv(os.path.join(out, "table_mac_profile.csv"), index=False)
+        lines.append(f"Hardware: {mp['gpu'].iloc[0]}; model: {mp['model'].iloc[0]}\n")
+        lines.append(g.round(2).to_markdown(index=False) if hasattr(g, "to_markdown") else g.round(2).to_string())
+    d = df[df["experiment"].astype(str).str.contains("mac")] if len(df) and "experiment" in df else df.iloc[0:0]
+    if len(d):
+        t = d.groupby(["method", "budget", "length"])["score"].mean().unstack("length") * 100
+        t.round(1).to_csv(os.path.join(out, "table_mac_passkey.csv"))
+        lines.append("\n\nPasskey accuracy (%) on the Mac, by context length:\n")
+        lines.append(t.round(1).to_markdown() if hasattr(t, "to_markdown") else t.round(1).to_string())
+    if lines:
+        with open(os.path.join(out, "table_mac.md"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        print("  wrote table_mac")
 
 
 # ----------------------------------------------------------------- figure 7
@@ -472,11 +499,14 @@ def main(argv=None):
     fig3(main, a.out, a.budget)
     fig4(df, a.out)
     fig5(df, a.out)
-    fig6(prof, a.out)
+    # Fig 6 is the T4 study only; Apple Silicon (MPS) rows get their own figure and table.
+    on_mac = prof["gpu"].astype(str).str.startswith("mps") if prof is not None and "gpu" in prof else None
+    fig6(prof[~on_mac] if on_mac is not None else prof, a.out)
     fig7(df[df["experiment"].astype(str).isin([a.main_experiment, "ablation_qwen3b"])] if len(df) else df, a.out)
     fig8(df, a.out)
     tables(main, a.out, a.budget)
     table_llama(df, a.out)
+    mac_study(df, prof, a.out)
 
 
 if __name__ == "__main__":

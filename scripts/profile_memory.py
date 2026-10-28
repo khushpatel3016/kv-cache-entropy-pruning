@@ -6,13 +6,18 @@ tokens. It records
 
 * kv_mb            size of the retained KV cache;
 * resident_mb      GPU memory held after the full cache is freed (weights + pruned cache);
-* decode_peak_mb   peak GPU memory during decoding;
+* decode_peak_mb   peak GPU memory during decoding (NVIDIA only; Apple MPS has no peak counter,
+                   so on a Mac the memory allocated at the end of decoding is recorded instead);
 * decode_ms_tok    mean decode latency per token;
 * overhead_ms      allocation + selection time (includes the entropy-based budget);
 * prefill_ms       prefill time (identical for all methods: statistics are computed in it).
 
     python scripts/profile_memory.py --model Qwen/Qwen2.5-3B-Instruct \
         --lengths 4096 8192 16384 --out results/profile_qwen3b.jsonl
+
+    # Apple Silicon (MacBook): see docs/MAC_GUIDE.md
+    python scripts/profile_memory.py --model Qwen/Qwen2.5-0.5B-Instruct --device mps \
+        --lengths 2048 4096 --out results/profile_mac_qwen05b.jsonl
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from kvprune.data.passkey import make_passkey_prompt  # noqa: E402
-from kvprune.engine import PrunedGenerator, kv_bytes, load_model  # noqa: E402
+from kvprune.engine import PrunedGenerator, device_name, kv_bytes, load_model, pick_device  # noqa: E402
 from kvprune.methods import get_method  # noqa: E402
 
 MB = 1024 ** 2
@@ -44,10 +49,15 @@ def main(argv=None):
     ap.add_argument("--repeats", type=int, default=3)
     ap.add_argument("--out", required=True)
     ap.add_argument("--load-in-4bit", action="store_true")
+    ap.add_argument("--device", default="auto", help="auto | cuda | mps | cpu")
+    ap.add_argument("--dtype", default="auto", help="auto | float16 | bfloat16 | float32")
     a = ap.parse_args(argv)
 
-    cuda = torch.cuda.is_available()
-    model, tok = load_model(a.model, load_in_4bit=a.load_in_4bit)
+    device = pick_device(a.device)
+    cuda, mps = device.startswith("cuda"), device == "mps"
+    hw = device_name(device)
+    print("device:", hw, flush=True)
+    model, tok = load_model(a.model, device=device, dtype=a.dtype, load_in_4bit=a.load_in_4bit)
     gen = PrunedGenerator(model, tok)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
 
@@ -61,6 +71,8 @@ def main(argv=None):
                         gc.collect()
                         if cuda:
                             torch.cuda.empty_cache()
+                        elif mps:
+                            torch.mps.empty_cache()
                         st = gen.prefill(torch.tensor(ids))
                         cache, budgets, sel_ms = gen.compress(st, m, ratio=None if m.allocation == "none" else b)
                         logits, n, prefill_ms = st.last_logits, st.n, st.prefill_ms
@@ -71,16 +83,21 @@ def main(argv=None):
                             torch.cuda.empty_cache()
                             resident = torch.cuda.memory_allocated() / MB
                             torch.cuda.reset_peak_memory_stats()
+                        elif mps:
+                            torch.mps.empty_cache()
+                            resident = torch.mps.current_allocated_memory() / MB
                         kvb = kv_bytes(cache, gen.num_layers)
                         # Force exactly decode_tokens steps (no EOS stop) for comparable latency.
                         toks, dec_ms = gen.decode(cache, logits, n, a.decode_tokens, eos_ids=[])
                         if cuda:
                             peak = torch.cuda.max_memory_allocated() / MB
+                        elif mps:
+                            peak = torch.mps.current_allocated_memory() / MB
                         row = {"model": a.model, "length": n, "method": m.label, "budget": b, "repeat": rep,
                                "kv_mb": kvb / MB, "resident_mb": resident, "decode_peak_mb": peak,
                                "decode_ms_tok": dec_ms / max(1, len(toks) - 1), "overhead_ms": sel_ms,
                                "prefill_ms": prefill_ms, "layer_budgets": budgets,
-                               "gpu": torch.cuda.get_device_name(0) if cuda else "cpu"}
+                               "gpu": hw}
                         f.write(json.dumps(row) + "\n")
                         f.flush()
                         print(f"n={n} {m.label}@{b} rep{rep}: kv={row['kv_mb']:.1f}MB "

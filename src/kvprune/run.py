@@ -22,7 +22,7 @@ import yaml
 
 from .data.longbench import CATEGORY, MAX_NEW_TOKENS, build_longbench_prompt, load_longbench
 from .data.passkey import make_passkey_prompt, passkey_correct
-from .engine import PrunedGenerator, load_model
+from .engine import PrunedGenerator, device_name, load_model
 from .methods import get_method
 from .metrics import score_longbench
 
@@ -123,7 +123,7 @@ def run(cfg: dict) -> str:
         gen.set_static_profile(prof)
 
     env = {"torch": torch.__version__, "python": platform.python_version(),
-           "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"}
+           "gpu": device_name(model.device.type)}
     max_len = int(cfg.get("max_len", 8192))
     n_written = 0
     t_start = time.time()

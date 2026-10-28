@@ -61,6 +61,42 @@ def kv_bytes(cache, num_layers: int) -> int:
 def _sync(device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
+    elif device.type == "mps":
+        torch.mps.synchronize()
+
+
+def mps_available() -> bool:
+    return bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+
+
+def pick_device(device: Optional[str] = None) -> str:
+    """Explicit choice, else NVIDIA GPU, else Apple Silicon GPU (MPS), else CPU."""
+    if device and device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if mps_available():
+        return "mps"
+    return "cpu"
+
+
+def device_name(device: str) -> str:
+    """Human-readable hardware name recorded with every result row."""
+    import platform
+
+    if device.startswith("cuda") and torch.cuda.is_available():
+        return torch.cuda.get_device_name(0)
+    if device == "mps":
+        chip = ""
+        try:
+            import subprocess
+
+            chip = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True,
+                                  text=True, timeout=5).stdout.strip()
+        except Exception:  # noqa: BLE001
+            pass
+        return f"mps ({chip or platform.machine()})"
+    return f"cpu ({platform.processor() or platform.machine()})"
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +108,9 @@ def load_model(name_or_path: str, device: Optional[str] = None, dtype: str = "au
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     register_kvprune_attention()
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = pick_device(device)
     if dtype == "auto":
+        # fp16 on NVIDIA; fp32 on Apple MPS and CPU (no fp16 overflow risk; fine for <=1.5B models)
         torch_dtype = torch.float16 if device.startswith("cuda") else torch.float32
     else:
         torch_dtype = getattr(torch, dtype)

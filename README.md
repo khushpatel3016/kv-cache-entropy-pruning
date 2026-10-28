@@ -62,6 +62,7 @@ Main runs need a 16 GB GPU (free Kaggle or Colab T4). `notebooks/kaggle_run.ipyn
 | Second model | `configs/llama3b_generalisation.yaml` (needs Llama-3.2 access) | Table II |
 | Memory / latency | `python scripts/profile_memory.py --model Qwen/Qwen2.5-3B-Instruct --lengths 4096 8192 16384 --out results/profile_qwen3b.jsonl` | Fig 6 |
 | Figures | `python scripts/make_figures.py` | `figures/*.png`, `*.pdf`, tables |
+| On-device (MacBook, Apple Silicon) | see [`docs/MAC_GUIDE.md`](docs/MAC_GUIDE.md) | Fig 10, `table_mac.md` |
 
 Every result row in `results/*.jsonl` records the method, budget, score, prediction, per-layer budgets, per-layer entropies, timings and environment. All figures regenerate from these files alone.
 

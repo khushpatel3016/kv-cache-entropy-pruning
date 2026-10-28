@@ -1,0 +1,15 @@
+# On-device study (Apple Silicon MacBook, PyTorch MPS backend), run by Sneha Dash.
+# Small model and contexts that fit a laptop; budgets low enough to separate methods.
+# ~20-40 min on an M-series MacBook Air. Resumes if interrupted (rerun the same command).
+name: passkey_mac_qwen05b
+model: Qwen/Qwen2.5-0.5B-Instruct
+device: mps
+dtype: auto            # float32 on MPS
+window: 32
+methods: [full, snapkv, pyramidkv, entropy, cake_style]
+budgets: [0.05, 0.1, 0.2]
+passkey:
+  lengths: [2048, 4096]
+  depths: [0.0, 0.25, 0.5, 0.75, 1.0]
+  trials: 5
+output: results/passkey_mac_qwen05b.jsonl
