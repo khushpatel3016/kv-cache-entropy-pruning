@@ -1,0 +1,14 @@
+# Cross-platform comparison (Intel laptop CPU). IDENTICAL to the other two passkey_*_qwen05b
+# configs except for the device, so differences come from the hardware only.
+name: passkey_cpu_qwen05b
+model: Qwen/Qwen2.5-0.5B-Instruct
+device: cpu
+dtype: float32         # same precision on every machine -> identical KV-cache sizes
+window: 32
+methods: [full, snapkv, pyramidkv, entropy, cake_style]
+budgets: [0.05, 0.1, 0.2]
+passkey:
+  lengths: [2048, 4096]
+  depths: [0.0, 0.25, 0.5, 0.75, 1.0]
+  trials: 5
+output: results/passkey_cpu_qwen05b.jsonl

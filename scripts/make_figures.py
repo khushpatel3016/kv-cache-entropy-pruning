@@ -19,7 +19,7 @@ Tables:
   fig8_direction_test       passkey at 2% of 4K: entropy vs reversed vs SnapKV vs CAKE, both models
   table_main.csv / .md      task x method at the 20% budget (x100)
   table_llama.csv / .md     Llama-3.2-3B at 10% and 20%, plus table_llama_significance.csv
-  fig10_mac_memory_latency  + table_mac.md: on-device study on Apple Silicon (MacBook, MPS)
+  fig10_cross_platform      + table_xplat.md: same model/settings on NVIDIA T4, Apple Silicon (MPS), laptop CPU
   table_significance.csv    ours minus each baseline, paired bootstrap CI, per budget
 """
 
@@ -289,30 +289,98 @@ def fig6(prof, out, name="fig6_memory_latency", where=""):
     save(fig, out, name)
 
 
-# ------------------------------------------------- Apple Silicon (MacBook) study
-def mac_study(df, prof, out):
-    """Memory/latency figure and a summary table for the on-device (Apple MPS) runs."""
-    mp = prof[prof["gpu"].astype(str).str.startswith("mps")] if prof is not None and "gpu" in prof else None
-    if mp is not None and not mp.empty:
-        fig6(mp, out, "fig10_mac_memory_latency", " (MacBook, MPS)")
+# ------------------------------------------------- cross-platform study (Fig 10)
+XPLAT_MODEL = "Qwen2.5-0.5B"
+
+
+def platform_of(gpu):
+    g = str(gpu)
+    if g.startswith("mps"):
+        return "Apple Silicon (MPS)"
+    if g.startswith("cpu"):
+        return "Laptop CPU"
+    return f"NVIDIA {g.replace('Tesla ', '')}"
+
+
+PLAT_ORDER = ["NVIDIA T4", "Apple Silicon (MPS)", "Laptop CPU"]
+
+
+def xplat_study(df, prof, out, length=None, budget=0.1):
+    """Same model, precision and settings on every machine: speed, overhead and accuracy per platform."""
+    p = prof[prof["model"].astype(str).str.contains(XPLAT_MODEL)].copy() if prof is not None and len(prof) else None
     lines = []
-    if mp is not None and not mp.empty:
-        g = mp.groupby(["length", "method", "budget"]).agg(
-            kv_mb=("kv_mb", "mean"), decode_ms_tok=("decode_ms_tok", "mean"),
-            overhead_ms=("overhead_ms", "mean"), prefill_ms=("prefill_ms", "mean")).reset_index()
-        g.round(2).to_csv(os.path.join(out, "table_mac_profile.csv"), index=False)
-        lines.append(f"Hardware: {mp['gpu'].iloc[0]}; model: {mp['model'].iloc[0]}\n")
-        lines.append(g.round(2).to_markdown(index=False) if hasattr(g, "to_markdown") else g.round(2).to_string())
-    d = df[df["experiment"].astype(str).str.contains("mac")] if len(df) and "experiment" in df else df.iloc[0:0]
+    if p is not None and not p.empty:
+        p["platform"] = p["gpu"].map(platform_of)
+        L = length or int(p["length"].max())
+        q = p[p["length"] == L]
+        rows = []
+        for plat, g in q.groupby("platform"):
+            full = g[g["method"] == "full"]
+            ours = g[(g["method"] == OURS) & (g["budget"] == budget)]
+            snap = g[(g["method"] == "snapkv") & (g["budget"] == budget)]
+            if full.empty or ours.empty:
+                continue
+            rows.append({"platform": plat, "hardware": g["gpu"].iloc[0], "length": L,
+                         "prefill_ms": full["prefill_ms"].mean(),
+                         "kv_full_mb": full["kv_mb"].mean(), "kv_pruned_mb": ours["kv_mb"].mean(),
+                         "decode_full_ms": full["decode_ms_tok"].mean(),
+                         "decode_ours_ms": ours["decode_ms_tok"].mean(),
+                         "decode_snapkv_ms": snap["decode_ms_tok"].mean() if len(snap) else float("nan"),
+                         "speedup": full["decode_ms_tok"].mean() / ours["decode_ms_tok"].mean(),
+                         "overhead_ms": ours["overhead_ms"].mean(),
+                         "overhead_pct_prefill": 100 * ours["overhead_ms"].mean() / full["prefill_ms"].mean()})
+        if rows:
+            t = pd.DataFrame(rows)
+            t["o"] = t["platform"].map(lambda x: PLAT_ORDER.index(x) if x in PLAT_ORDER else 9)
+            t = t.sort_values("o").drop(columns="o")
+            t.round(2).to_csv(os.path.join(out, "table_xplat_speed.csv"), index=False)
+            lines.append(f"Cross-platform speed, {XPLAT_MODEL} fp32, {L} tokens, EntropyKV at {budget * 100:g}%\n")
+            lines.append(t.round(2).to_markdown(index=False) if hasattr(t, "to_markdown") else t.round(2).to_string())
+            # Figure: decode latency full vs pruned per platform, and prefill vs overhead
+            fig, axes = plt.subplots(1, 2, figsize=(7.0, 2.5))
+            x = np.arange(len(t))
+            axes[0].bar(x - 0.2, t["decode_full_ms"], 0.4, color="0.75", ec="0", lw=0.5, label="Full cache")
+            axes[0].bar(x + 0.2, t["decode_ours_ms"], 0.4, color="0.2", ec="0", lw=0.5,
+                        label=f"EntropyKV, {budget * 100:g}% budget")
+            for i, r in enumerate(t.itertuples()):
+                axes[0].text(i + 0.2, r.decode_ours_ms, f"{r.speedup:.1f}\u00d7", ha="center", va="bottom", fontsize=7)
+            ticks = t["platform"].str.replace(" (", "\n(", regex=False)
+            axes[0].set_xticks(x, ticks, fontsize=7)
+            axes[0].set_ylabel("Decode latency (ms / token)")
+            axes[0].set_title(f"Decoding at {round(L / 1024)}K tokens")
+            axes[0].legend(frameon=False, fontsize=7)
+            axes[1].bar(x, t["overhead_pct_prefill"], 0.5, color="0.4", ec="0", lw=0.5)
+            for i, r in enumerate(t.itertuples()):
+                axes[1].text(i, r.overhead_pct_prefill, f"{r.overhead_ms:.0f} ms", ha="center", va="bottom", fontsize=7)
+            axes[1].set_xticks(x, ticks, fontsize=7)
+            axes[1].set_ylabel("Allocation overhead (% of prefill)")
+            axes[1].set_title("Cost of computing the budgets")
+            for ax in axes:
+                ax.grid(axis="x", visible=False)
+            save(fig, out, "fig10_cross_platform")
+    d = df[df["experiment"].astype(str).str.match(r"passkey_(mac|t4|cpu)_qwen05b")] if len(df) and "experiment" in df else df.iloc[0:0]
     if len(d):
-        t = d.groupby(["method", "budget", "length"])["score"].mean().unstack("length") * 100
-        t.round(1).to_csv(os.path.join(out, "table_mac_passkey.csv"))
-        lines.append("\n\nPasskey accuracy (%) on the Mac, by context length:\n")
+        d = d.copy()
+        d["platform"] = d["experiment"].map({"passkey_t4_qwen05b": "NVIDIA T4", "passkey_mac_qwen05b": "Apple Silicon (MPS)",
+                                             "passkey_cpu_qwen05b": "Laptop CPU"})
+        t = d.groupby(["method", "budget", "platform"])["score"].mean().unstack("platform") * 100
+        t = t[[c for c in PLAT_ORDER if c in t.columns]]
+        t.round(1).to_csv(os.path.join(out, "table_xplat_passkey.csv"))
+        lines.append("\n\nPasskey accuracy (%), same prompts on every machine (2K and 4K tokens, 5 depths x 5 trials):\n")
         lines.append(t.round(1).to_markdown() if hasattr(t, "to_markdown") else t.round(1).to_string())
+        # agreement: same prediction text on each platform as on the T4, per (method, budget, prompt)
+        if "NVIDIA T4" in set(d["platform"]):
+            key = ["method", "budget", "length", "depth", "idx"]
+            ref = d[d["platform"] == "NVIDIA T4"].set_index(key)["pred"]
+            for plat in [c for c in PLAT_ORDER[1:] if c in set(d["platform"])]:
+                other = d[d["platform"] == plat].set_index(key)["pred"]
+                j = ref.to_frame("a").join(other.to_frame("b"), how="inner")
+                if len(j):
+                    lines.append(f"\nIdentical answers to the T4 on {plat}: {100 * (j['a'] == j['b']).mean():.1f}% of {len(j)} runs")
     if lines:
-        with open(os.path.join(out, "table_mac.md"), "w", encoding="utf-8") as f:
+        with open(os.path.join(out, "table_xplat.md"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
-        print("  wrote table_mac")
+        print("  wrote table_xplat")
 
 
 # ----------------------------------------------------------------- figure 7
@@ -500,13 +568,14 @@ def main(argv=None):
     fig4(df, a.out)
     fig5(df, a.out)
     # Fig 6 is the T4 study only; Apple Silicon (MPS) rows get their own figure and table.
-    on_mac = prof["gpu"].astype(str).str.startswith("mps") if prof is not None and "gpu" in prof else None
-    fig6(prof[~on_mac] if on_mac is not None else prof, a.out)
+    # Fig 6 is the main (3B) T4 study; the small-model rows from every machine go to Fig 10.
+    small = prof["model"].astype(str).str.contains(XPLAT_MODEL) if prof is not None and "model" in prof else None
+    fig6(prof[~small] if small is not None else prof, a.out)
     fig7(df[df["experiment"].astype(str).isin([a.main_experiment, "ablation_qwen3b"])] if len(df) else df, a.out)
     fig8(df, a.out)
     tables(main, a.out, a.budget)
     table_llama(df, a.out)
-    mac_study(df, prof, a.out)
+    xplat_study(df, prof, a.out)
 
 
 if __name__ == "__main__":

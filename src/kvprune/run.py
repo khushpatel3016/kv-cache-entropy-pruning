@@ -180,6 +180,8 @@ def run(cfg: dict) -> str:
             del state
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
             el = time.time() - t_start
             print(f"{s['task']}#{s['idx']} n={len(ids)} rows={n_written} elapsed={el/60:.1f} min", flush=True)
     return out_path

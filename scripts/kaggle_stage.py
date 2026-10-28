@@ -37,7 +37,14 @@ STAGES = {
     "window_profile": "window 16/64 ablations, memory/latency profiling, passkey at 2%/5%",
     "llama": "Llama-3.2-3B generalisation at 10% and 20% + passkey direction test (~4 h)",
     "confirm": "passkey at 2%/3% of 4K: entropy vs reversed entropy vs SnapKV vs CAKE-style (~30 min)",
+    "xplat": "cross-platform comparison on the T4: Qwen2.5-0.5B fp32, profile + passkey (~30 min)",
 }
+
+
+# Cross-platform profiling command (identical on T4, MacBook and laptop CPU; only --device differs).
+XPLAT_PROFILE = [PY, "scripts/profile_memory.py", "--model", "Qwen/Qwen2.5-0.5B-Instruct", "--dtype", "float32",
+                 "--lengths", "2048", "4096", "--methods", "full", "snapkv", "pyramidkv", "entropy", "cake_style",
+                 "--budgets", "0.1", "0.2", "0.5", "--repeats", "3"]
 
 
 class Clock:
@@ -163,6 +170,12 @@ def main(argv=None) -> int:
             1: [("cfg", "configs/ablation_window64_qwen3b.yaml", "ablation_window64_qwen3b"),
                 ("cfg", "configs/passkey_extreme_qwen3b.yaml", "passkey_extreme_qwen3b")],
         }, clock)
+    elif a.stage == "xplat":
+        # Same model, precision, lengths and budgets as the MacBook and laptop-CPU runs.
+        codes += wait([
+            launch(XPLAT_PROFILE + ["--device", "cuda", "--out", "results/profile_t4_qwen05b.jsonl"], 0, "xplat_profile"),
+            run_cfg("configs/passkey_t4_qwen05b.yaml", 1, clock, tag="xplat_passkey"),
+        ])
     elif a.stage == "confirm":
         cfg = "configs/passkey_confirm_qwen3b.yaml"
         codes += wait([

@@ -1,10 +1,9 @@
-# On-device study (Apple Silicon MacBook, PyTorch MPS backend), run by Sneha Dash.
-# Small model and contexts that fit a laptop; budgets low enough to separate methods.
-# ~20-40 min on an M-series MacBook Air. Resumes if interrupted (rerun the same command).
+# Cross-platform comparison (Apple Silicon MacBook, run by Sneha Dash). IDENTICAL to the other two passkey_*_qwen05b
+# configs except for the device, so differences come from the hardware only.
 name: passkey_mac_qwen05b
 model: Qwen/Qwen2.5-0.5B-Instruct
 device: mps
-dtype: auto            # float32 on MPS
+dtype: float32         # same precision on every machine -> identical KV-cache sizes
 window: 32
 methods: [full, snapkv, pyramidkv, entropy, cake_style]
 budgets: [0.05, 0.1, 0.2]
