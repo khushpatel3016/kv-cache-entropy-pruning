@@ -1,0 +1,69 @@
+
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+
+# ==============================
+# macOS
+# ==============================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ==============================
+# Model weights and checkpoints
+# ==============================
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.gguf
+pytorch_model.bin
+
+# Model and library caches
+.cache/
+.cache/huggingface/
+huggingface/
+transformers_cache/
+
+# ==============================
+# Downloaded datasets
+# ==============================
+data/longbench/
+
+# ==============================
+# Generated experiment results
+# ==============================
+results/*.csv
+results/*.json
+results/*.jsonl
+
+# ==============================
+# IDEs and editors
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==============================
+# Logs
+# ==============================
+*.log

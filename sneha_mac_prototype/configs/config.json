@@ -1,0 +1,11 @@
+{
+    "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+    "device": "auto",
+    "max_new_tokens": 32,
+    "max_input_tokens": 512,
+    "fixed_retention_ratio": 0.5,
+    "min_entropy_retention": 0.25,
+    "max_entropy_retention": 0.75,
+    "num_passkey_trials": 10,
+    "seed": 42
+}
