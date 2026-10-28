@@ -133,35 +133,12 @@ def run_trial(
     )
 
     # Locate the passkey in the tokenized prompt using character offsets.
-    passkey_match = re.search(
-        r"Important passkey:\s*(\S+)",
-        prompt,
-    )
-    passkey_positions = []
-    if passkey_match:
-        char_start, char_end = passkey_match.span(1)
-        offset_encoding = tokenizer(
-            prompt,
-            return_offsets_mapping=True,
-            truncation=True,
-            max_length=config["max_input_tokens"],
-        )
-        passkey_positions = [
-            i
-            for i, (start, end) in enumerate(
-                offset_encoding["offset_mapping"]
-            )
-            if start < char_end and end > char_start
-        ]
-
-    # Select tokens to retain, preserving the complete passkey when feasible.
     keep_indices = select_token_indices(
         importance_scores,
         keep_count,
         preserve_edges=True,
         random_selection=(policy == "random"),
         seed=trial_seed,
-        mandatory_indices=passkey_positions,
     )
 
     cache = outputs.past_key_values
