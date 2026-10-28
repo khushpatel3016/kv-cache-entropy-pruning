@@ -56,6 +56,7 @@ def run_trial(
     config,
     device,
     trial_seed,
+    budget_ratio=None,
 ):
     inputs = tokenizer(
         prompt,
@@ -119,23 +120,12 @@ def run_trial(
         )
     )
 
-    # Choose the cache retention ratio.
-    if policy == "entropy":
-        ratio = entropy_guided_ratio(
-            entropies,
-            config["min_entropy_retention"],
-            config["max_entropy_retention"],
-        )
-
-    elif policy in ("fixed", "random"):
-        ratio = fixed_ratio(
-            config["fixed_retention_ratio"]
-        )
-
-    else:
-        raise ValueError(
-            f"Unknown cache policy: {policy}"
-        )
+    # V2: all pruning policies use the same requested budget.
+    if policy not in ("fixed", "random", "entropy"):
+        raise ValueError(f"Unknown cache policy: {policy}")
+    if budget_ratio is None:
+        budget_ratio = config["fixed_retention_ratio"]
+    ratio = max(0.05, min(1.0, float(budget_ratio)))
 
     keep_count = min(
         input_length,
@@ -292,7 +282,7 @@ def main():
 
     results_dir = os.path.join(
         PROJECT_ROOT,
-        "results",
+        "results_v2",
     )
 
     os.makedirs(results_dir, exist_ok=True)
@@ -305,125 +295,128 @@ def main():
     print("Device:", device)
     print("Trials:", number_of_trials)
 
-    policies = [
-        "full",
-        "fixed",
-        "random",
-        "entropy",
-    ]
-
+    policies = ["fixed", "random", "entropy"]
+    budgets = config.get("retention_budgets", [0.5, 0.3, 0.2, 0.1])
     rows = []
     random.seed(config["seed"])
 
-    for trial in range(number_of_trials):
-        passkey = f"KEY{random.randint(100000, 999999)}"
+    for budget in budgets:
+        print(f"\\n===== Retention budget: {budget:.0%} =====")
 
-        prompt = make_prompt(
-            passkey,
-            filler_sentences=18 + (trial % 8),
-        )
+        for trial in range(number_of_trials):
+            passkey = f"KEY{random.randint(100000, 999999)}"
 
-        for policy in policies:
-            try:
-                (
-                    generated_text,
-                    original_length,
-                    retained_length,
-                    elapsed,
-                    mean_entropy,
-                ) = run_trial(
-                    model,
-                    tokenizer,
-                    prompt,
-                    policy,
-                    config,
-                    device,
-                    config["seed"] + trial,
-                )
+            # Start with a long prompt, then reduce filler only if needed.
+            filler_sentences = 100
+            prompt = make_prompt(passkey, filler_sentences)
 
-                match = re.search(
-                    r"KEY\d{6}",
-                    generated_text.upper(),
-                )
+            while len(tokenizer(
+                prompt, truncation=False
+            )["input_ids"]) > config["max_input_tokens"]:
+                filler_sentences -= 1
+                if filler_sentences < 1:
+                    raise ValueError(
+                        "Passkey prompt cannot fit max_input_tokens."
+                    )
+                prompt = make_prompt(passkey, filler_sentences)
 
-                prediction = (
-                    match.group(0)
-                    if match
-                    else ""
-                )
+            prompt_tokens = len(tokenizer(
+                prompt, truncation=False
+            )["input_ids"])
+            if passkey not in prompt or "What is the important passkey?" not in prompt:
+                raise ValueError("Prompt is missing the passkey or final question.")
 
-                correct = int(
-                    prediction == passkey
-                )
+            for policy in policies:
+                try:
+                    (
+                        generated_text,
+                        original_length,
+                        retained_length,
+                        elapsed,
+                        mean_entropy,
+                    ) = run_trial(
+                        model,
+                        tokenizer,
+                        prompt,
+                        policy,
+                        config,
+                        device,
+                        config["seed"] + trial,
+                        budget_ratio=budget,
+                    )
 
-                cache_reduction = 100 * (
-                    1 - retained_length
-                    / max(original_length, 1)
-                )
+                    match = re.search(
+                        r"KEY\\d{6}",
+                        generated_text.upper(),
+                    )
+                    prediction = match.group(0) if match else ""
+                    correct = int(prediction == passkey)
+                    cache_reduction = 100 * (
+                        1 - retained_length / max(original_length, 1)
+                    )
 
-                rows.append({
-                    "trial": trial + 1,
-                    "policy": policy,
-                    "passkey": passkey,
-                    "prediction": prediction,
-                    "correct": correct,
-                    "input_tokens": original_length,
-                    "retained_cache_tokens": retained_length,
-                    "retention_ratio": (
-                        retained_length
-                        / max(original_length, 1)
-                    ),
-                    "cache_reduction_pct": cache_reduction,
-                    "elapsed_seconds": elapsed,
-                    "mean_normalized_entropy": mean_entropy,
-                    "device": str(device),
-                    "error": "",
-                })
+                    rows.append({
+                        "trial": trial + 1,
+                        "budget": budget,
+                        "policy": policy,
+                        "passkey": passkey,
+                        "prediction": prediction,
+                        "correct": correct,
+                        "input_tokens": original_length,
+                        "prompt_tokens_before_model": prompt_tokens,
+                        "retained_cache_tokens": retained_length,
+                        "retention_ratio": retained_length / max(original_length, 1),
+                        "cache_reduction_pct": cache_reduction,
+                        "elapsed_seconds": elapsed,
+                        "mean_normalized_entropy": mean_entropy,
+                        "device": str(device),
+                        "error": "",
+                    })
 
-                print(
-                    f"Trial {trial + 1}/{number_of_trials} | "
-                    f"{policy:7s} | "
-                    f"correct={correct} | "
-                    f"cache={retained_length}/{original_length} | "
-                    f"time={elapsed:.2f}s"
-                )
+                    print(
+                        f"Budget={budget:.0%} | Trial {trial + 1}/{number_of_trials} | "
+                        f"{policy:7s} | correct={correct} | "
+                        f"cache={retained_length}/{original_length} | "
+                        f"time={elapsed:.2f}s"
+                    )
+                    if trial < 2:
+                        print("Generated text:", repr(generated_text))
 
-            except Exception as error:
-                print(
-                    f"\nERROR: policy={policy}, "
-                    f"trial={trial + 1}"
-                )
+                except Exception as error:
+                    print(
+                        f"ERROR: budget={budget}, policy={policy}, "
+                        f"trial={trial + 1}: {type(error).__name__}: {error}"
+                    )
+                    rows.append({
+                        "trial": trial + 1,
+                        "budget": budget,
+                        "policy": policy,
+                        "passkey": passkey,
+                        "prediction": "",
+                        "correct": None,
+                        "input_tokens": None,
+                        "prompt_tokens_before_model": prompt_tokens,
+                        "retained_cache_tokens": None,
+                        "retention_ratio": None,
+                        "cache_reduction_pct": None,
+                        "elapsed_seconds": None,
+                        "mean_normalized_entropy": None,
+                        "device": str(device),
+                        "error": f"{type(error).__name__}: {error}",
+                    })
 
-                print(
-                    f"{type(error).__name__}: {error}"
-                )
-
-                rows.append({
-                    "trial": trial + 1,
-                    "policy": policy,
-                    "passkey": passkey,
-                    "prediction": "",
-                    "correct": None,
-                    "input_tokens": None,
-                    "retained_cache_tokens": None,
-                    "retention_ratio": None,
-                    "cache_reduction_pct": None,
-                    "elapsed_seconds": None,
-                    "mean_normalized_entropy": None,
-                    "device": str(device),
-                    "error": (
-                        f"{type(error).__name__}: {error}"
-                    ),
-                })
+    os.makedirs(results_dir, exist_ok=True)
 
     results = pd.DataFrame(rows)
 
     results.to_csv(
-        os.path.join(
-            results_dir,
-            "passkey_results.csv",
-        ),
+        os.path.join(results_dir, "passkey_results.csv"),
         index=False,
+    )
+    results.to_json(
+        os.path.join(results_dir, "passkey_results.jsonl"),
+        orient="records",
+        lines=True,
     )
 
     valid = results.dropna(
@@ -434,7 +427,7 @@ def main():
     )
 
     if not valid.empty:
-        summary = valid.groupby("policy").agg(
+        summary = valid.groupby(["budget", "policy"]).agg(
             retrieval_accuracy=("correct", "mean"),
             mean_cache_reduction_pct=(
                 "cache_reduction_pct",
