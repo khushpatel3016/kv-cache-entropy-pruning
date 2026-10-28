@@ -1,14 +1,14 @@
-method,budget,NVIDIA T4,Laptop CPU
-cake_style,0.05,100.0,100.0
-cake_style,0.1,100.0,100.0
-cake_style,0.2,100.0,100.0
-entropy,0.05,20.0,20.0
-entropy,0.1,60.0,60.0
-entropy,0.2,100.0,100.0
-full,1.0,100.0,100.0
-pyramidkv,0.05,20.0,20.0
-pyramidkv,0.1,56.0,56.0
-pyramidkv,0.2,98.0,98.0
-snapkv,0.05,50.0,50.0
-snapkv,0.1,100.0,100.0
-snapkv,0.2,100.0,100.0
+method,budget,NVIDIA T4,Apple Silicon (MPS),Laptop CPU
+cake_style,0.05,100.0,100.0,100.0
+cake_style,0.1,100.0,100.0,100.0
+cake_style,0.2,100.0,100.0,100.0
+entropy,0.05,20.0,20.0,20.0
+entropy,0.1,60.0,60.0,60.0
+entropy,0.2,100.0,100.0,100.0
+full,1.0,100.0,100.0,100.0
+pyramidkv,0.05,20.0,20.0,20.0
+pyramidkv,0.1,56.0,56.0,56.0
+pyramidkv,0.2,98.0,98.0,98.0
+snapkv,0.05,50.0,50.0,50.0
+snapkv,0.1,100.0,100.0,100.0
+snapkv,0.2,100.0,100.0,100.0

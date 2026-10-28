@@ -1,3 +1,4 @@
 platform,hardware,length,prefill_ms,kv_full_mb,kv_pruned_mb,decode_full_ms,decode_ours_ms,decode_snapkv_ms,speedup,overhead_ms,overhead_pct_prefill
 NVIDIA T4,Tesla T4,4052,1537.03,94.97,9.5,36.11,27.99,28.36,1.29,9.93,0.65
+Apple Silicon (MPS),mps (Apple M5),4052,2219.6,94.97,9.5,35.41,23.99,23.59,1.48,7.01,0.32
 Laptop CPU,"cpu (Intel64 Family 6 Model 186 Stepping 3, GenuineIntel)",4052,28950.81,94.97,9.5,172.24,113.19,100.87,1.52,30.95,0.11
