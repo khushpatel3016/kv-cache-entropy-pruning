@@ -1,11 +1,11 @@
 budget,baseline,n_pairs,diff_x100,ci_low,ci_high,p_boot,significant
+0.1,CAKE-style,300,-0.206,-0.813,0.35,0.54,False
+0.1,EntropyKV reversed,300,0.982,-0.565,2.506,0.2,False
 0.1,SnapKV,300,-0.272,-1.154,0.481,0.548,False
 0.1,PyramidKV,300,1.271,-0.131,2.848,0.09,False
 0.1,EntropyKV-static,300,0.317,0.005,0.669,0.048,True
-0.1,CAKE-style,300,-0.206,-0.813,0.35,0.54,False
-0.1,EntropyKV reversed,300,0.982,-0.565,2.506,0.2,False
+0.2,CAKE-style,300,0.524,-0.115,1.244,0.12,False
+0.2,EntropyKV reversed,300,0.124,-0.56,0.755,0.746,False
 0.2,SnapKV,300,0.183,-0.535,0.861,0.616,False
 0.2,PyramidKV,300,0.822,-0.309,2.022,0.158,False
 0.2,EntropyKV-static,300,0.044,-0.46,0.561,0.874,False
-0.2,CAKE-style,300,0.524,-0.115,1.244,0.12,False
-0.2,EntropyKV reversed,300,0.124,-0.56,0.755,0.746,False
