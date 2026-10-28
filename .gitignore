@@ -10,3 +10,7 @@ venv/
 *.bin
 /data/
 # keep results/*.jsonl and figures/ (small, they are the evidence)
+
+# Python generated files
+__pycache__/
+*.py[cod]
