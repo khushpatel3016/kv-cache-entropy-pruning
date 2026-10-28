@@ -132,13 +132,36 @@ def run_trial(
         max(2, round(input_length * ratio)),
     )
 
-    # Select tokens to retain.
+    # Locate the passkey in the tokenized prompt using character offsets.
+    passkey_match = re.search(
+        r"Important passkey:\s*(\S+)",
+        prompt,
+    )
+    passkey_positions = []
+    if passkey_match:
+        char_start, char_end = passkey_match.span(1)
+        offset_encoding = tokenizer(
+            prompt,
+            return_offsets_mapping=True,
+            truncation=True,
+            max_length=config["max_input_tokens"],
+        )
+        passkey_positions = [
+            i
+            for i, (start, end) in enumerate(
+                offset_encoding["offset_mapping"]
+            )
+            if start < char_end and end > char_start
+        ]
+
+    # Select tokens to retain, preserving the complete passkey when feasible.
     keep_indices = select_token_indices(
         importance_scores,
         keep_count,
         preserve_edges=True,
         random_selection=(policy == "random"),
         seed=trial_seed,
+        mandatory_indices=passkey_positions,
     )
 
     cache = outputs.past_key_values
@@ -207,10 +230,12 @@ def run_trial(
         generated_tokens.append(next_token)
         current_position += 1
 
-        if (
-            tokenizer.eos_token_id is not None
-            and next_token.item() == tokenizer.eos_token_id
-        ):
+        stop_ids = {
+            token_id
+            for token_id in (tokenizer.eos_token_id, tokenizer.pad_token_id)
+            if token_id is not None
+        }
+        if next_token.item() in stop_ids:
             break
 
     generated_ids = torch.cat(
@@ -295,7 +320,7 @@ def main():
     print("Device:", device)
     print("Trials:", number_of_trials)
 
-    policies = ["fixed", "random", "entropy"]
+    policies = ["full", "fixed", "random", "entropy"]
     budgets = config.get("retention_budgets", [0.5, 0.3, 0.2, 0.1])
     rows = []
     random.seed(config["seed"])
@@ -346,7 +371,7 @@ def main():
                     )
 
                     match = re.search(
-                        r"KEY\\d{6}",
+                        r"KEY\d{6}",
                         generated_text.upper(),
                     )
                     prediction = match.group(0) if match else ""

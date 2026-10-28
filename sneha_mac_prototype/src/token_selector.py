@@ -7,6 +7,7 @@ def select_token_indices(
     preserve_edges=True,
     random_selection=False,
     seed=42,
+    mandatory_indices=None,
 ):
     sequence_length = scores.numel()
     keep_count = max(1, min(sequence_length, int(keep_count)))
@@ -17,6 +18,14 @@ def select_token_indices(
         mandatory.update(range(min(4, sequence_length)))
         mandatory.update(
             range(max(0, sequence_length - 32), sequence_length)
+        )
+
+    # Preserve explicitly requested positions when the budget permits.
+    if mandatory_indices is not None:
+        mandatory.update(
+            int(i)
+            for i in mandatory_indices
+            if 0 <= int(i) < sequence_length
         )
 
     # If the mandatory tokens exceed the budget, prioritize the
